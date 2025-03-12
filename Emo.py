@@ -2,6 +2,21 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
+# Add this near the top of your file
+import threading
+import http.server
+import socketserver
+
+# Add this function
+def run_web_server():
+    PORT = int(os.environ.get("PORT", 10000))
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        print(f"Web server running on port {PORT}")
+        httpd.serve_forever()
+
+# Add this before your bot starts
+threading.Thread(target=run_web_server, daemon=True).start()
 
 # Load the token from .env file
 load_dotenv()
