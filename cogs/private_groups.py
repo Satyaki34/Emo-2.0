@@ -64,6 +64,13 @@ class PrivateGroups(commands.Cog):
         )
         
         embed.add_field(
+            name="!reset_all_chats",
+            value="Reset all your conversation histories with Emo across all channels.\n"
+                "Example: `!reset_all_chats`",
+            inline=False
+        )
+
+        embed.add_field(
             name="!test",
             value="Simple test command to check if the bot is working.\n"
                  "Example: `!test`",

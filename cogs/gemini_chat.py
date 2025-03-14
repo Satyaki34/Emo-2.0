@@ -48,7 +48,18 @@ class GeminiChat(commands.Cog):
                 "max_output_tokens": 2048,
             }
             
-            if "models/gemini-1.5-pro" in self.available_models:
+            # Try to use the best available model with fallbacks
+            if "models/gemini-2.0-flash" in self.available_models:
+                self.model = genai.GenerativeModel(
+                    'gemini-2.0-flash',
+                    generation_config=generation_config
+                )
+            elif "models/gemini-1.5-flash" in self.available_models:
+                self.model = genai.GenerativeModel(
+                    'gemini-1.5-flash',
+                    generation_config=generation_config
+                )
+            elif "models/gemini-1.5-pro" in self.available_models:
                 self.model = genai.GenerativeModel(
                     'gemini-1.5-pro',
                     generation_config=generation_config
@@ -74,8 +85,11 @@ class GeminiChat(commands.Cog):
             # Send a "thinking" message to show the bot is processing
             thinking_msg = await ctx.send("🤔 Thinking...")
             
-            # Start or continue a conversation for this user
-            if ctx.author.id not in self.conversations:
+            # Create a composite key with channel ID and user ID for channel-specific memory
+            conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
+            
+            # Start or continue a conversation for this user in this channel
+            if conversation_key not in self.conversations:
                 try:
                     chat = self.model.start_chat(history=[])
                     
@@ -85,7 +99,7 @@ class GeminiChat(commands.Cog):
                         self.system_prompt
                     )
                     
-                    self.conversations[ctx.author.id] = chat
+                    self.conversations[conversation_key] = chat
                 except Exception as e:
                     await thinking_msg.edit(content=f"⚠️ Error starting chat: {str(e)}")
                     return
@@ -93,7 +107,7 @@ class GeminiChat(commands.Cog):
             # Send the question to Gemini
             try:
                 response = await asyncio.to_thread(
-                    self.conversations[ctx.author.id].send_message,
+                    self.conversations[conversation_key].send_message,
                     question
                 )
             except Exception as e:
@@ -126,8 +140,9 @@ class GeminiChat(commands.Cog):
         except Exception as e:
             await ctx.send(f"⚠️ Error: {str(e)}")
             # Reset conversation on error
-            if ctx.author.id in self.conversations:
-                del self.conversations[ctx.author.id]
+            conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
+            if conversation_key in self.conversations:
+                del self.conversations[conversation_key]
     
     @commands.command()
     async def list_models(self, ctx):
@@ -144,15 +159,33 @@ class GeminiChat(commands.Cog):
     
     @commands.command()
     async def reset_chat(self, ctx):
-        """Reset your chat history with Emo
+        """Reset your chat history with Emo in this channel
         
         Example: !reset_chat
         """
-        if ctx.author.id in self.conversations:
-            del self.conversations[ctx.author.id]
-            await ctx.send("✅ Your chat history with Emo has been reset!")
+        conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
+        if conversation_key in self.conversations:
+            del self.conversations[conversation_key]
+            await ctx.send("✅ Your chat history with Emo has been reset for this channel!")
         else:
-            await ctx.send("You don't have an active chat with Emo.")
+            await ctx.send("You don't have an active chat with Emo in this channel.")
+    
+    @commands.command()
+    async def reset_all_chats(self, ctx):
+        """Reset all your chat histories with Emo across all channels
+        
+        Example: !reset_all_chats
+        """
+        # Find all conversations for this user
+        user_conversations = [key for key in self.conversations.keys() if key.endswith(f"_{ctx.author.id}")]
+        
+        if user_conversations:
+            # Delete all conversations for this user
+            for key in user_conversations:
+                del self.conversations[key]
+            await ctx.send(f"✅ All your chat histories with Emo have been reset across {len(user_conversations)} channels!")
+        else:
+            await ctx.send("You don't have any active chats with Emo.")
     
     def _clean_ai_disclaimers(self, text):
         """Remove AI disclaimers from the response text"""
