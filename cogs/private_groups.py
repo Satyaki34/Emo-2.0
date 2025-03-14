@@ -19,9 +19,9 @@ class PrivateGroups(commands.Cog):
         
         # Add command descriptions with their syntax
         embed.add_field(
-            name="!mkgrp [@person_name]",
-            value="Creates a private text room for you and your friend.\n"
-                 "Example: `!mkgrp @JohnDoe`",
+            name="!mkgrp [@person1] [@person2] ...",
+            value="Creates a private text room for you and mentioned friends.\n"
+                 "Example: `!mkgrp @JohnDoe @JaneDoe`",
             inline=False
         )
         
@@ -52,17 +52,17 @@ class PrivateGroups(commands.Cog):
         embed.add_field(
             name="!ask [question]",
             value="Ask Emo a question or have a conversation.\n"
-                  "Example: `!ask What's your favorite movie?`",
+                 "Example: `!ask What's your favorite movie?`",
             inline=False
         )
-
+        
         embed.add_field(
             name="!reset_chat",
             value="Reset your conversation history with Emo.\n"
-                  "Example: `!reset_chat`",
+                 "Example: `!reset_chat`",
             inline=False
         )
-
+        
         embed.add_field(
             name="!test",
             value="Simple test command to check if the bot is working.\n"
@@ -82,13 +82,23 @@ class PrivateGroups(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def mkgrp(self, ctx, member: discord.Member):
-        """Creates a private text channel for the command invoker and a mentioned member."""
-        if member == ctx.author:
-            await ctx.send("You cannot create a group with yourself.")
+    async def mkgrp(self, ctx, *members: discord.Member):
+        """Creates a private text channel for the command invoker and mentioned members."""
+        # Check if any members were mentioned
+        if not members:
+            await ctx.send("Please mention at least one member to create a group with.")
             return
-        if member.bot:
-            await ctx.send("You cannot create a group with a bot.")
+            
+        # Check if the user mentioned themselves
+        if ctx.author in members:
+            await ctx.send("You don't need to mention yourself, you're automatically included.")
+            
+        # Filter out the author and bots
+        valid_members = [member for member in members if member != ctx.author and not member.bot]
+        
+        # Check if there are any valid members left
+        if not valid_members:
+            await ctx.send("No valid members to create a group with. Please mention real users who aren't bots.")
             return
 
         guild = ctx.guild
@@ -100,21 +110,44 @@ class PrivateGroups(commands.Cog):
             category = await guild.create_category(category_name)
             await category.set_permissions(guild.default_role, read_messages=False)
         
-        channel_name = "private-group"
+        # Create a name for the channel using the first few members' names
+        member_names = [member.display_name for member in valid_members[:3]]
+        if len(valid_members) > 3:
+            member_names.append(f"+{len(valid_members)-3}")
+            
+        channel_name = f"private-{ctx.author.display_name}-{'-'.join(member_names)}"
+        # Ensure the channel name isn't too long for Discord
+        if len(channel_name) > 100:
+            channel_name = channel_name[:97] + "..."
+        
+        # Create the channel
         channel = await guild.create_text_channel(
             channel_name, 
             category=category, 
             topic=f"Creator: {ctx.author.id}"
         )
         
-        # Set permissions
+        # Set permissions for the default role
         await channel.set_permissions(guild.default_role, read_messages=False)
-        await channel.set_permissions(ctx.author, read_messages=True, send_messages=True)
-        await channel.set_permissions(member, read_messages=True, send_messages=True)
-        await channel.set_permissions(self.bot.user, read_messages=True, send_messages=True)
         
-        await channel.send(f"Welcome {ctx.author.mention} and {member.mention} to your private group!")
-        await ctx.send(f"Private group created for {ctx.author.mention} and {member.mention}.")
+        # Set permissions for the creator
+        await channel.set_permissions(ctx.author, read_messages=True, send_messages=True)
+        
+        # Set permissions for the bot
+        await channel.set_permissions(self.bot.user, read_messages=True, send_messages=True)
+
+        # Set permissions for each member
+        mention_list = [ctx.author.mention]
+        for member in valid_members:
+            await channel.set_permissions(member, read_messages=True, send_messages=True)
+            mention_list.append(member.mention)
+        
+        # Send welcome message
+        members_str = ", ".join(mention_list)
+        await channel.send(f"Welcome to your private group! Members: {members_str}")
+        
+        # Confirmation message
+        await ctx.send(f"Private group created for {len(mention_list)} members.")
 
     @commands.command()
     async def mkvc(self, ctx):
