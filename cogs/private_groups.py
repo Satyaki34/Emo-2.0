@@ -50,6 +50,20 @@ class PrivateGroups(commands.Cog):
         )
         
         embed.add_field(
+            name="!ask [question]",
+            value="Ask Emo a question or have a conversation.\n"
+                  "Example: `!ask What's your favorite movie?`",
+            inline=False
+        )
+
+        embed.add_field(
+            name="!reset_chat",
+            value="Reset your conversation history with Emo.\n"
+                  "Example: `!reset_chat`",
+            inline=False
+        )
+
+        embed.add_field(
             name="!test",
             value="Simple test command to check if the bot is working.\n"
                  "Example: `!test`",
