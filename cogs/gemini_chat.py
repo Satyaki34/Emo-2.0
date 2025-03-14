@@ -30,8 +30,6 @@ class GeminiChat(commands.Cog):
         Avoid disclaimers about your nature unless explicitly asked about how you work.
         """
         
-        # Rest of the initialization code remains the same
-        # ...
         # Get available models
         self.available_models = []
         try:
@@ -63,7 +61,7 @@ class GeminiChat(commands.Cog):
         except Exception as e:
             print(f"Error creating model: {e}")
         
-        # Keep track of ongoing conversations
+        # Initialize the conversations dictionary
         self.conversations = {}
 
     @commands.command()
