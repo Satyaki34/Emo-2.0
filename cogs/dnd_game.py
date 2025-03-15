@@ -1,11 +1,69 @@
 import discord
 from discord.ext import commands
 import asyncio
+from pymongo import MongoClient
+import os
+from dotenv import load_dotenv
 
 class DnDGame(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.active_games = {}  # Stores active games by channel ID
+        
+        # Load environment variables
+        load_dotenv()
+        mongo_uri = os.getenv('MONGO_URI')
+        
+        # Initialize MongoDB or fallback to in-memory storage
+        if not mongo_uri:
+            print("WARNING: MONGO_URI not found in .env file!")
+            print("DnD games will be stored in memory and lost on restart.")
+            self.use_mongo = False
+            self.active_games = {}  # Stores active games by channel ID
+        else:
+            # Initialize MongoDB connection
+            try:
+                self.mongo_client = MongoClient(mongo_uri)
+                self.db = self.mongo_client['emo_bot']
+                self.games_collection = self.db['dnd_games']
+                
+                # Create indexes for faster queries
+                self.games_collection.create_index("channel_id", unique=True)
+                
+                self.use_mongo = True
+                print("Successfully connected to MongoDB for DnD games")
+            except Exception as e:
+                print(f"Failed to connect to MongoDB for DnD games: {e}")
+                print("DnD games will be stored in memory and lost on restart.")
+                self.use_mongo = False
+                self.active_games = {}
+    
+    async def get_game(self, channel_id):
+        """Get an active game from storage"""
+        if not self.use_mongo:
+            return self.active_games.get(str(channel_id))
+        else:
+            game = self.games_collection.find_one({"channel_id": str(channel_id)})
+            return game
+    
+    async def save_game(self, channel_id, game_data):
+        """Save game data to storage"""
+        if not self.use_mongo:
+            self.active_games[str(channel_id)] = game_data
+        else:
+            # Upsert - update if exists, insert if not
+            self.games_collection.update_one(
+                {"channel_id": str(channel_id)},
+                {"$set": game_data},
+                upsert=True
+            )
+    
+    async def delete_game(self, channel_id):
+        """Delete a game from storage"""
+        if not self.use_mongo:
+            if str(channel_id) in self.active_games:
+                del self.active_games[str(channel_id)]
+        else:
+            self.games_collection.delete_one({"channel_id": str(channel_id)})
     
     @commands.command(name="dnd")
     async def dnd_setup(self, ctx):
@@ -16,7 +74,8 @@ class DnDGame(commands.Cog):
         channel_id = str(ctx.channel.id)
         
         # Check if there's already a game in this channel
-        if channel_id in self.active_games:
+        existing_game = await self.get_game(channel_id)
+        if existing_game:
             await ctx.send("A D&D game is already set up in this channel.")
             return
         
@@ -97,14 +156,19 @@ class DnDGame(commands.Cog):
                 
                 # Store the game data
                 game_data = {
+                    "channel_id": channel_id,
+                    "created_by": str(ctx.author.id),
+                    "created_at": ctx.message.created_at.isoformat(),
                     "players": player_names,
                     "player_ids": player_ids,
                     "game_master": gm_name,
                     "game_master_id": gm_id,
-                    "is_ai_gm": is_ai_gm
+                    "is_ai_gm": is_ai_gm,
+                    "state": "setup",
+                    "last_updated": ctx.message.created_at.isoformat()
                 }
                 
-                self.active_games[channel_id] = game_data
+                await self.save_game(channel_id, game_data)
                 
                 await ctx.send(embed=success_embed)
                 
@@ -119,6 +183,54 @@ class DnDGame(commands.Cog):
                 
         except asyncio.TimeoutError:
             await ctx.send("Setup timed out. Please try again when you're ready.")
+    
+    @commands.command(name="dnd_status")
+    async def dnd_status(self, ctx):
+        """Show the status of the current D&D game in this channel"""
+        channel_id = str(ctx.channel.id)
+        game = await self.get_game(channel_id)
+        
+        if not game:
+            await ctx.send("There is no active D&D game in this channel. Use `!dnd` to create one.")
+            return
+        
+        # Create status embed
+        embed = discord.Embed(
+            title="🎲 D&D Game Status 🐉",
+            description="Current game information:",
+            color=discord.Color.blue()
+        )
+        
+        # Add game details
+        embed.add_field(name="Game Master", value=game["game_master"], inline=True)
+        embed.add_field(name="Players", value=", ".join(game["players"]), inline=False)
+        embed.add_field(name="State", value=game["state"].capitalize(), inline=True)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name="end_dnd")
+    async def end_dnd(self, ctx):
+        """End the current D&D game in this channel"""
+        channel_id = str(ctx.channel.id)
+        game = await self.get_game(channel_id)
+        
+        if not game:
+            await ctx.send("There is no active D&D game in this channel.")
+            return
+        
+        # Check if user is the creator or the GM
+        if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
+            await ctx.send("Only the game creator or Game Master can end this game.")
+            return
+        
+        # Delete the game
+        await self.delete_game(channel_id)
+        await ctx.send("The D&D game has been ended. Thanks for playing!")
+    
+    def cog_unload(self):
+        """Clean up resources when the cog is unloaded"""
+        if self.use_mongo:
+            self.mongo_client.close()
 
 async def setup(bot):
     await bot.add_cog(DnDGame(bot))

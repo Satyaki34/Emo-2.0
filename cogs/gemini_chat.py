@@ -5,6 +5,9 @@ import asyncio
 import re
 import os
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from datetime import datetime, timedelta, timezone
+from discord.ext import commands, tasks  
 
 class GeminiChat(commands.Cog):
     def __init__(self, bot):
@@ -13,10 +16,39 @@ class GeminiChat(commands.Cog):
         # Load environment variables
         load_dotenv()
         api_key = os.getenv('GEMINI_API_KEY')
+        mongo_uri = os.getenv('MONGO_URI')
         
         if not api_key:
             print("WARNING: GEMINI_API_KEY not found in .env file!")
             return
+            
+        if not mongo_uri:
+            print("WARNING: MONGO_URI not found in .env file!")
+            print("Falling back to in-memory storage. Conversations will be lost on restart.")
+            self.use_mongo = False
+            self.conversations = {}
+        else:
+            # Initialize MongoDB connection
+            try:
+                self.mongo_client = MongoClient(mongo_uri)
+                self.db = self.mongo_client['emo_bot']
+                self.conversations_collection = self.db['conversations']
+                self.messages_collection = self.db['conversation_messages']
+                self.use_mongo = True
+                print("Successfully connected to MongoDB")
+                
+                # Create indexes for faster queries
+                self.conversations_collection.create_index("conversation_key")
+                self.messages_collection.create_index("conversation_id")
+                self.messages_collection.create_index("timestamp")
+                
+                # Setup periodic cleanup of old conversations (runs once per day)
+                self.cleanup_old_conversations.start()
+            except Exception as e:
+                print(f"Failed to connect to MongoDB: {e}")
+                print("Falling back to in-memory storage. Conversations will be lost on restart.")
+                self.use_mongo = False
+                self.conversations = {}
             
         # Initialize Gemini API with your key
         genai.configure(api_key=api_key)
@@ -71,9 +103,148 @@ class GeminiChat(commands.Cog):
                 )
         except Exception as e:
             print(f"Error creating model: {e}")
-        
-        # Initialize the conversations dictionary
-        self.conversations = {}
+
+    @tasks.loop(hours=24)
+    async def cleanup_old_conversations(self):
+        """Clean up conversations older than 30 days"""
+        if not self.use_mongo:
+            return
+            
+        try:
+            # Find conversations with no activity in the last 30 days
+            thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+            old_conversations = self.conversations_collection.find(
+                {"last_updated": {"$lt": thirty_days_ago}}
+            )
+            
+            # Delete the conversations and their messages
+            for conv in old_conversations:
+                self.messages_collection.delete_many({"conversation_id": conv["_id"]})
+                self.conversations_collection.delete_one({"_id": conv["_id"]})
+                
+            print(f"Cleaned up old conversations")
+        except Exception as e:
+            print(f"Error during conversation cleanup: {e}")
+
+    async def get_conversation(self, conversation_key):
+        """Get or create a conversation"""
+        if not self.use_mongo:
+            # In-memory fallback
+            if conversation_key not in self.conversations:
+                chat = self.model.start_chat(history=[])
+                # Apply the system prompt for new conversations
+                await asyncio.to_thread(chat.send_message, self.system_prompt)
+                self.conversations[conversation_key] = chat
+            return self.conversations[conversation_key]
+        else:
+            # MongoDB implementation
+            conversation = self.conversations_collection.find_one({"conversation_key": conversation_key})
+            
+            if not conversation:
+                # Create a new conversation in the database
+                conversation_id = self.conversations_collection.insert_one({
+                    "conversation_key": conversation_key,
+                    "created_at": datetime.now(timezone.utc),
+                    "last_updated": datetime.now(timezone.utc)
+                }).inserted_id
+                
+                # Start a new chat with Gemini
+                chat = self.model.start_chat(history=[])
+                # Apply system prompt and store it
+                response = await asyncio.to_thread(chat.send_message, self.system_prompt)
+                
+                # Store system prompt in messages collection
+                self.messages_collection.insert_one({
+                    "conversation_id": conversation_id,
+                    "role": "user",
+                    "content": self.system_prompt,
+                    "is_system_prompt": True,
+                    "timestamp": datetime.now(timezone.utc)
+                })
+                
+                self.messages_collection.insert_one({
+                    "conversation_id": conversation_id,
+                    "role": "model",
+                    "content": response.text,
+                    "is_system_prompt": True,
+                    "timestamp": datetime.now(timezone.utc)
+                })
+                
+                return chat
+            else:
+                # Restore conversation from database
+                chat = self.model.start_chat(history=[])
+                messages = self.messages_collection.find(
+                    {"conversation_id": conversation["_id"]}
+                ).sort("timestamp", 1)  # Sort by timestamp ascending
+                
+                # Restore message history to the chat
+                for msg in messages:
+                    if msg.get("is_system_prompt", False):
+                        continue  # Skip the system prompt, it's already been applied
+                    
+                    # Simulate the message exchange to rebuild history
+                    if msg["role"] == "user":
+                        try:
+                            response = await asyncio.to_thread(chat.send_message, msg["content"])
+                            # Verify the response matches what we have stored
+                            stored_response = self.messages_collection.find_one({
+                                "conversation_id": conversation["_id"],
+                                "role": "model",
+                                "timestamp": {"$gt": msg["timestamp"]}
+                            }, sort=[("timestamp", 1)])
+                            
+                            if stored_response and response.text != stored_response["content"]:
+                                print("Warning: Restored response doesn't match stored response")
+                        except Exception as e:
+                            print(f"Error restoring conversation: {e}")
+                            # If we encounter an error, start a fresh chat
+                            return self.model.start_chat(history=[])
+                
+                # Update last accessed timestamp
+                self.conversations_collection.update_one(
+                    {"_id": conversation["_id"]},
+                    {"$set": {"last_updated": datetime.now(timezone.utc)}}
+                )
+                
+                return chat
+
+    async def store_message(self, conversation_key, user_message, ai_response):
+        """Store message history in MongoDB"""
+        if not self.use_mongo:
+            return  # No need to store if not using MongoDB
+            
+        try:
+            # Find the conversation document
+            conversation = self.conversations_collection.find_one({"conversation_key": conversation_key})
+            if not conversation:
+                return
+                
+            # Store user message
+            self.messages_collection.insert_one({
+                "conversation_id": conversation["_id"],
+                "role": "user",
+                "content": user_message,
+                "is_system_prompt": False,
+                "timestamp": datetime.now(timezone.utc)
+            })
+            
+            # Store AI response
+            self.messages_collection.insert_one({
+                "conversation_id": conversation["_id"],
+                "role": "model",
+                "content": ai_response,
+                "is_system_prompt": False,
+                "timestamp": datetime.now(timezone.utc)
+            })
+            
+            # Update last_updated timestamp
+            self.conversations_collection.update_one(
+                {"_id": conversation["_id"]},
+                {"$set": {"last_updated": datetime.now(timezone.utc)}}
+            )
+        except Exception as e:
+            print(f"Error storing messages: {e}")
 
     @commands.command()
     async def ask(self, ctx, *, question: str):
@@ -88,26 +259,17 @@ class GeminiChat(commands.Cog):
             # Create a composite key with channel ID and user ID for channel-specific memory
             conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
             
-            # Start or continue a conversation for this user in this channel
-            if conversation_key not in self.conversations:
-                try:
-                    chat = self.model.start_chat(history=[])
-                    
-                    # Apply the system prompt for new conversations
-                    await asyncio.to_thread(
-                        chat.send_message,
-                        self.system_prompt
-                    )
-                    
-                    self.conversations[conversation_key] = chat
-                except Exception as e:
-                    await thinking_msg.edit(content=f"⚠️ Error starting chat: {str(e)}")
-                    return
+            # Get or create conversation
+            try:
+                chat = await self.get_conversation(conversation_key)
+            except Exception as e:
+                await thinking_msg.edit(content=f"⚠️ Error starting chat: {str(e)}")
+                return
             
             # Send the question to Gemini
             try:
                 response = await asyncio.to_thread(
-                    self.conversations[conversation_key].send_message,
+                    chat.send_message,
                     question
                 )
             except Exception as e:
@@ -119,6 +281,9 @@ class GeminiChat(commands.Cog):
             
             # Remove any "As a language model" or similar phrases
             response_text = self._clean_ai_disclaimers(response_text)
+            
+            # Store the message pair in MongoDB if available
+            await self.store_message(conversation_key, question, response_text)
             
             # Split the response if it's too long for Discord (2000 char limit)
             if len(response_text) <= 1900:
@@ -140,9 +305,10 @@ class GeminiChat(commands.Cog):
         except Exception as e:
             await ctx.send(f"⚠️ Error: {str(e)}")
             # Reset conversation on error
-            conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
-            if conversation_key in self.conversations:
-                del self.conversations[conversation_key]
+            if not self.use_mongo:
+                conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
+                if conversation_key in self.conversations:
+                    del self.conversations[conversation_key]
     
     @commands.command()
     async def list_models(self, ctx):
@@ -164,11 +330,24 @@ class GeminiChat(commands.Cog):
         Example: !reset_chat
         """
         conversation_key = f"{ctx.channel.id}_{ctx.author.id}"
-        if conversation_key in self.conversations:
-            del self.conversations[conversation_key]
-            await ctx.send("✅ Your chat history with Emo has been reset for this channel!")
+        
+        if not self.use_mongo:
+            if conversation_key in self.conversations:
+                del self.conversations[conversation_key]
+                await ctx.send("✅ Your chat history with Emo has been reset for this channel!")
+            else:
+                await ctx.send("You don't have an active chat with Emo in this channel.")
         else:
-            await ctx.send("You don't have an active chat with Emo in this channel.")
+            # MongoDB implementation
+            conversation = self.conversations_collection.find_one({"conversation_key": conversation_key})
+            if conversation:
+                # Delete all messages for this conversation
+                self.messages_collection.delete_many({"conversation_id": conversation["_id"]})
+                # Delete the conversation itself
+                self.conversations_collection.delete_one({"_id": conversation["_id"]})
+                await ctx.send("✅ Your chat history with Emo has been reset for this channel!")
+            else:
+                await ctx.send("You don't have an active chat with Emo in this channel.")
     
     @commands.command()
     async def reset_all_chats(self, ctx):
@@ -176,16 +355,43 @@ class GeminiChat(commands.Cog):
         
         Example: !reset_all_chats
         """
-        # Find all conversations for this user
-        user_conversations = [key for key in self.conversations.keys() if key.endswith(f"_{ctx.author.id}")]
+        user_id = ctx.author.id
         
-        if user_conversations:
-            # Delete all conversations for this user
-            for key in user_conversations:
-                del self.conversations[key]
-            await ctx.send(f"✅ All your chat histories with Emo have been reset across {len(user_conversations)} channels!")
+        if not self.use_mongo:
+            # Find all conversations for this user
+            user_conversations = [key for key in self.conversations.keys() if key.endswith(f"_{user_id}")]
+            
+            if user_conversations:
+                # Delete all conversations for this user
+                for key in user_conversations:
+                    del self.conversations[key]
+                await ctx.send(f"✅ All your chat histories with Emo have been reset across {len(user_conversations)} channels!")
+            else:
+                await ctx.send("You don't have any active chats with Emo.")
         else:
-            await ctx.send("You don't have any active chats with Emo.")
+            # MongoDB implementation
+            pattern = f".*_{user_id}$"
+            cursor = self.conversations_collection.find({"conversation_key": {"$regex": pattern}})
+            
+            conversation_count = 0
+            conversation_ids = []
+            
+            # Collect all conversation IDs first
+            for conversation in cursor:
+                conversation_ids.append(conversation["_id"])
+                conversation_count += 1
+                
+            # Then delete all messages and conversations
+            if conversation_ids:
+                for conv_id in conversation_ids:
+                    # Delete all messages for this conversation
+                    self.messages_collection.delete_many({"conversation_id": conv_id})
+                    # Delete the conversation itself
+                    self.conversations_collection.delete_one({"_id": conv_id})
+                
+                await ctx.send(f"✅ All your chat histories with Emo have been reset across {conversation_count} channels!")
+            else:
+                await ctx.send("You don't have any active chats with Emo.")
     
     def _clean_ai_disclaimers(self, text):
         """Remove AI disclaimers from the response text"""
@@ -259,6 +465,12 @@ class GeminiChat(commands.Cog):
                     result.append(sub_chunk)
         
         return result
+    
+    def cog_unload(self):
+        """Clean up resources when the cog is unloaded"""
+        if self.use_mongo:
+            self.cleanup_old_conversations.cancel()
+            self.mongo_client.close()
 
 async def setup(bot):
     await bot.add_cog(GeminiChat(bot))

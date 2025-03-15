@@ -17,7 +17,13 @@ class PrivateGroups(commands.Cog):
         # Add your custom robot image as the thumbnail
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
         
-        # Add command descriptions with their syntax
+        # Private Groups commands
+        embed.add_field(
+            name="Private Group Commands",
+            value="Commands for creating and managing private groups",
+            inline=False
+        )
+        
         embed.add_field(
             name="!mkgrp [@person1] [@person2] ...",
             value="Creates a private text room for you and mentioned friends.\n"
@@ -49,6 +55,13 @@ class PrivateGroups(commands.Cog):
             inline=False
         )
         
+        # Gemini Chat commands
+        embed.add_field(
+            name="Emo Chat Commands",
+            value="Commands for chatting with Emo (AI assistant)",
+            inline=False
+        )
+        
         embed.add_field(
             name="!ask [question]",
             value="Ask Emo a question or have a conversation.\n"
@@ -58,7 +71,7 @@ class PrivateGroups(commands.Cog):
         
         embed.add_field(
             name="!reset_chat",
-            value="Reset your conversation history with Emo.\n"
+            value="Reset your conversation history with Emo in the current channel.\n"
                  "Example: `!reset_chat`",
             inline=False
         )
@@ -69,11 +82,46 @@ class PrivateGroups(commands.Cog):
                 "Example: `!reset_all_chats`",
             inline=False
         )
+        
+        embed.add_field(
+            name="!list_models",
+            value="List available Gemini AI models that Emo can use.\n"
+                "Example: `!list_models`",
+            inline=False
+        )
+
+        # D&D Game commands
+        embed.add_field(
+            name="D&D Game Commands",
+            value="Commands for Dungeons & Dragons gameplay",
+            inline=False
+        )
 
         embed.add_field(
             name="!dnd",
             value="Setup a new Dungeons & Dragons game session.\n"
                 "Example: `!dnd`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="!dnd_status",
+            value="Show the status of the current D&D game in this channel.\n"
+                "Example: `!dnd_status`",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="!end_dnd",
+            value="End the current D&D game in this channel.\n"
+                "Example: `!end_dnd`",
+            inline=False
+        )
+        
+        # Utility commands
+        embed.add_field(
+            name="Utility Commands",
+            value="General utility commands",
             inline=False
         )
 
