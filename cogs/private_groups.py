@@ -1,7 +1,9 @@
+# private_groups.py
 import discord
 from discord.ext import commands
 from discord import SelectOption, ui
 
+# Dropdown UI component - separated for potential reuse
 class CommandsDropdown(ui.Select):
     def __init__(self, bot):
         self.bot = bot
@@ -14,7 +16,6 @@ class CommandsDropdown(ui.Select):
         super().__init__(placeholder="Select a command category...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction):
-        # Create an embed based on the selected value
         if self.values[0] == "private_groups":
             embed = self.create_private_groups_embed()
         elif self.values[0] == "emo_chat":
@@ -33,36 +34,29 @@ class CommandsDropdown(ui.Select):
             color=discord.Color.blue()
         )
         
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
         
         embed.add_field(
             name="!mkgrp [@person1] [@person2] ...",
-            value="Creates a private text room for you and mentioned friends.\n"
-                 "Example: `!mkgrp @JohnDoe @JaneDoe`",
+            value="Creates a private text room for you and mentioned friends.\nExample: `!mkgrp @JohnDoe @JaneDoe`",
             inline=False
         )
         
         embed.add_field(
             name="!mkvc",
-            value="Creates a private voice channel linked to the current private text channel.\n"
-                 "Can only be used by the creator in a private group text channel.\n"
-                 "Example: `!mkvc`",
+            value="Creates a private voice channel linked to the current private text channel.\nCan only be used by the creator.\nExample: `!mkvc`",
             inline=False
         )
         
         embed.add_field(
             name="!delvc",
-            value="Deletes the voice channel linked to the current private text channel.\n"
-                 "Can only be used by the creator in a private group text channel.\n"
-                 "Example: `!delvc`",
+            value="Deletes the voice channel linked to the current private text channel.\nCan only be used by the creator.\nExample: `!delvc`",
             inline=False
         )
         
         embed.add_field(
             name="!delgrp",
-            value="Deletes the private text channel and its linked voice channel.\n"
-                 "Can only be used by the creator in a private group text channel.\n"
-                 "Example: `!delgrp`",
+            value="Deletes the private text channel and its linked voice channel.\nCan only be used by the creator.\nExample: `!delgrp`",
             inline=False
         )
         
@@ -75,37 +69,11 @@ class CommandsDropdown(ui.Select):
             description="Commands for chatting with Emo (AI assistant)",
             color=discord.Color.purple()
         )
-        
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
-        
-        embed.add_field(
-            name="!ask [question]",
-            value="Ask Emo a question or have a conversation.\n"
-                 "Example: `!ask What's your favorite movie?`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!reset_chat",
-            value="Reset your conversation history with Emo in the current channel.\n"
-                 "Example: `!reset_chat`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!reset_all_chats",
-            value="Reset all your conversation histories with Emo across all channels.\n"
-                "Example: `!reset_all_chats`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!list_models",
-            value="List available Gemini AI models that Emo can use.\n"
-                "Example: `!list_models`",
-            inline=False
-        )
-        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
+        embed.add_field(name="!ask [question]", value="Ask Emo a question.\nExample: `!ask What's your favorite movie?`", inline=False)
+        embed.add_field(name="!reset_chat", value="Reset conversation history in this channel.\nExample: `!reset_chat`", inline=False)
+        embed.add_field(name="!reset_all_chats", value="Reset all conversation histories.\nExample: `!reset_all_chats`", inline=False)
+        embed.add_field(name="!list_models", value="List available AI models.\nExample: `!list_models`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         
@@ -115,30 +83,10 @@ class CommandsDropdown(ui.Select):
             description="Commands for Dungeons & Dragons gameplay",
             color=discord.Color.dark_green()
         )
-        
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
-        
-        embed.add_field(
-            name="!dnd",
-            value="Setup a new Dungeons & Dragons game session.\n"
-                "Example: `!dnd`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!dnd_status",
-            value="Show the status of the current D&D game in this channel.\n"
-                "Example: `!dnd_status`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!end_dnd",
-            value="End the current D&D game in this channel.\n"
-                "Example: `!end_dnd`",
-            inline=False
-        )
-        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
+        embed.add_field(name="!dnd", value="Setup a new D&D session.\nExample: `!dnd`", inline=False)
+        embed.add_field(name="!dnd_status", value="Show current D&D status.\nExample: `!dnd_status`", inline=False)
+        embed.add_field(name="!end_dnd", value="End current D&D game.\nExample: `!end_dnd`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         
@@ -148,29 +96,15 @@ class CommandsDropdown(ui.Select):
             description="General utility commands",
             color=discord.Color.light_gray()
         )
-        
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
-        
-        embed.add_field(
-            name="!test",
-            value="Simple test command to check if the bot is working.\n"
-                 "Example: `!test`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="!list",
-            value="Shows this list of commands.\n"
-                 "Example: `!list`",
-            inline=False
-        )
-        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
+        embed.add_field(name="!test", value="Test bot functionality.\nExample: `!test`", inline=False)
+        embed.add_field(name="!list", value="Show this command list.\nExample: `!list`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
 
 class CommandsView(ui.View):
     def __init__(self, bot):
-        super().__init__(timeout=180)  # 3 minute timeout
+        super().__init__(timeout=180)
         self.add_item(CommandsDropdown(bot))
 
 class PrivateGroups(commands.Cog):
@@ -180,97 +114,71 @@ class PrivateGroups(commands.Cog):
     @commands.command()
     async def list(self, ctx):
         """Lists all available commands with descriptions and usage information."""
-        # Create initial embed
         embed = discord.Embed(
             title="Bot Commands List",
-            description="Please select a command category from the dropdown menu below to see available commands.",
+            description="Select a command category from the dropdown menu below.",
             color=discord.Color.blue()
         )
-        
-        # Add your custom robot image as the thumbnail
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
-        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
         embed.add_field(
             name="Available Categories",
             value="• Private Group Commands\n• Emo Chat Commands\n• D&D Game Commands\n• Utility Commands",
             inline=False
         )
-        
         embed.set_footer(text="Use the dropdown menu below to see specific commands")
         
-        # Create view with dropdown
         view = CommandsView(self.bot)
-        
-        # Send the message with the view
         await ctx.send(embed=embed, view=view)
 
-    # Keep all other commands the same
     @commands.command()
     async def mkgrp(self, ctx, *members: discord.Member):
         """Creates a private text channel for the command invoker and mentioned members."""
-        # Check if any members were mentioned
         if not members:
             await ctx.send("Please mention at least one member to create a group with.")
             return
             
-        # Check if the user mentioned themselves
         if ctx.author in members:
             await ctx.send("You don't need to mention yourself, you're automatically included.")
             
-        # Filter out the author and bots
         valid_members = [member for member in members if member != ctx.author and not member.bot]
         
-        # Check if there are any valid members left
         if not valid_members:
-            await ctx.send("No valid members to create a group with. Please mention real users who aren't bots.")
+            await ctx.send("No valid members to create a group with.")
             return
 
         guild = ctx.guild
         category_name = "Private Groups"
         
-        # Find or create the "Private Groups" category
         category = discord.utils.get(guild.categories, name=category_name)
         if category is None:
             category = await guild.create_category(category_name)
             await category.set_permissions(guild.default_role, read_messages=False)
         
-        # Create a name for the channel using the first few members' names
         member_names = [member.display_name for member in valid_members[:3]]
         if len(valid_members) > 3:
             member_names.append(f"+{len(valid_members)-3}")
             
         channel_name = f"private-{ctx.author.display_name}-{'-'.join(member_names)}"
-        # Ensure the channel name isn't too long for Discord
         if len(channel_name) > 100:
             channel_name = channel_name[:97] + "..."
         
-        # Create the channel
         channel = await guild.create_text_channel(
             channel_name, 
             category=category, 
             topic=f"Creator: {ctx.author.id}"
         )
         
-        # Set permissions for the default role
         await channel.set_permissions(guild.default_role, read_messages=False)
-        
-        # Set permissions for the creator
         await channel.set_permissions(ctx.author, read_messages=True, send_messages=True)
-        
-        # Set permissions for the bot
         await channel.set_permissions(self.bot.user, read_messages=True, send_messages=True)
 
-        # Set permissions for each member
         mention_list = [ctx.author.mention]
         for member in valid_members:
             await channel.set_permissions(member, read_messages=True, send_messages=True)
             mention_list.append(member.mention)
         
-        # Send welcome message
         members_str = ", ".join(mention_list)
         await channel.send(f"Welcome to your private group! Members: {members_str}")
-        
-        # Confirmation message
         await ctx.send(f"Private group created for {len(mention_list)} members.")
 
     @commands.command()
@@ -303,7 +211,6 @@ class PrivateGroups(commands.Cog):
         
         new_topic = f"{ctx.channel.topic}, Voice: {voice_channel.id}"
         await ctx.channel.edit(topic=new_topic)
-        
         await ctx.send(f"Voice channel {voice_channel.name} has been created.")
 
     @commands.command()
@@ -332,7 +239,6 @@ class PrivateGroups(commands.Cog):
         
         new_topic = ctx.channel.topic.split(", Voice: ")[0]
         await ctx.channel.edit(topic=new_topic)
-        
         await ctx.send("Voice channel has been deleted.")
 
     @commands.command()
@@ -350,7 +256,6 @@ class PrivateGroups(commands.Cog):
             await ctx.send("Only the creator can delete the group.")
             return
     
-        # Delete voice channel if it exists
         if ", Voice: " in ctx.channel.topic:
             voice_channel_id = int(ctx.channel.topic.split(", Voice: ")[1])
             voice_channel = ctx.guild.get_channel(voice_channel_id)
@@ -360,5 +265,6 @@ class PrivateGroups(commands.Cog):
         await ctx.send("This private group will be deleted in a few seconds...")
         await ctx.channel.delete()
 
-    async def setup(bot):
-        await bot.add_cog(PrivateGroups(bot))
+# Setup function moved outside the class
+async def setup(bot):
+    await bot.add_cog(PrivateGroups(bot))
