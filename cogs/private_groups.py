@@ -11,6 +11,7 @@ class CommandsDropdown(ui.Select):
             SelectOption(label="Private Group Commands", description="Commands for creating and managing private groups", value="private_groups"),
             SelectOption(label="Emo Chat Commands", description="Commands for chatting with Emo (AI assistant)", value="emo_chat"),
             SelectOption(label="D&D Game Commands", description="Commands for Dungeons & Dragons gameplay", value="dnd"),
+            SelectOption(label="Character Creation Commands", description="Commands for creating and managing D&D characters", value="character"),
             SelectOption(label="Utility Commands", description="General utility commands", value="utility")
         ]
         super().__init__(placeholder="Select a command category...", min_values=1, max_values=1, options=options)
@@ -22,6 +23,8 @@ class CommandsDropdown(ui.Select):
             embed = self.create_emo_chat_embed()
         elif self.values[0] == "dnd":
             embed = self.create_dnd_embed()
+        elif self.values[0] == "character":
+            embed = self.create_character_embed()
         elif self.values[0] == "utility":
             embed = self.create_utility_embed()
         
@@ -90,6 +93,19 @@ class CommandsDropdown(ui.Select):
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         
+    def create_character_embed(self):
+        embed = discord.Embed(
+            title="Character Creation Commands",
+            description="Commands for creating and managing D&D characters",
+            color=discord.Color.orange()
+        )
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
+        embed.add_field(name="!creation", value="Create a new character for the current D&D game.\nExample: `!creation`", inline=False)
+        embed.add_field(name="!view_character [@player]", value="View a character in the D&D game. If no player is specified, shows your character.\nExample: `!view_character @JohnDoe`", inline=False)
+        embed.add_field(name="!list_characters", value="List all characters in the current D&D game.\nExample: `!list_characters`", inline=False)
+        embed.set_footer(text="Select another category from the dropdown menu")
+        return embed
+        
     def create_utility_embed(self):
         embed = discord.Embed(
             title="Utility Commands",
@@ -122,7 +138,7 @@ class PrivateGroups(commands.Cog):
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
         embed.add_field(
             name="Available Categories",
-            value="• Private Group Commands\n• Emo Chat Commands\n• D&D Game Commands\n• Utility Commands",
+            value="• Private Group Commands\n• Emo Chat Commands\n• D&D Game Commands\n• Character Creation Commands\n• Utility Commands",
             inline=False
         )
         embed.set_footer(text="Use the dropdown menu below to see specific commands")

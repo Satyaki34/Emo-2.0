@@ -65,25 +65,22 @@ async def on_ready():
     # Start the status update task
     status_update.start()
     
-    try:
-        await bot.load_extension('cogs.private_groups')
-        print("Successfully loaded cogs.private_groups")
-    except Exception as e:
-        print(f"Failed to load cogs.private_groups: {e}")
+    # Load cogs
+    cogs_to_load = [
+        'cogs.private_groups',
+        'cogs.gemini_chat',
+        'cogs.dnd_game',
+        'cogs.character_creation'  # New character creation cog
+    ]
+    
+    for cog in cogs_to_load:
+        try:
+            await bot.load_extension(cog)
+            print(f"Successfully loaded {cog}")
+        except Exception as e:
+            print(f"Failed to load {cog}: {e}")
     
     print(f"Loaded cogs: {[cog for cog in bot.cogs]}")
-
-    try:
-        await bot.load_extension('cogs.gemini_chat')
-        print("Successfully loaded cogs.gemini_chat")
-    except Exception as e:
-        print(f"Failed to load cogs.gemini_chat: {e}")
-    
-    try:
-        await bot.load_extension('cogs.dnd_game')
-        print("Successfully loaded cogs.dnd_game")
-    except Exception as e:
-        print(f"Failed to load cogs.dnd_game: {e}")
         
 @bot.command()
 async def test(ctx):
