@@ -1,28 +1,39 @@
 import discord
 from discord.ext import commands
+from discord import SelectOption, ui
 
-class PrivateGroups(commands.Cog):
+class CommandsDropdown(ui.Select):
     def __init__(self, bot):
         self.bot = bot
+        options = [
+            SelectOption(label="Private Group Commands", description="Commands for creating and managing private groups", value="private_groups"),
+            SelectOption(label="Emo Chat Commands", description="Commands for chatting with Emo (AI assistant)", value="emo_chat"),
+            SelectOption(label="D&D Game Commands", description="Commands for Dungeons & Dragons gameplay", value="dnd"),
+            SelectOption(label="Utility Commands", description="General utility commands", value="utility")
+        ]
+        super().__init__(placeholder="Select a command category...", min_values=1, max_values=1, options=options)
 
-    @commands.command()
-    async def list(self, ctx):
-        """Lists all available commands with descriptions and usage information."""
+    async def callback(self, interaction):
+        # Create an embed based on the selected value
+        if self.values[0] == "private_groups":
+            embed = self.create_private_groups_embed()
+        elif self.values[0] == "emo_chat":
+            embed = self.create_emo_chat_embed()
+        elif self.values[0] == "dnd":
+            embed = self.create_dnd_embed()
+        elif self.values[0] == "utility":
+            embed = self.create_utility_embed()
+        
+        await interaction.response.edit_message(embed=embed, view=CommandsView(self.bot))
+
+    def create_private_groups_embed(self):
         embed = discord.Embed(
-            title="Bot Commands List",
-            description="Here are all the available commands and how to use them:",
+            title="Private Group Commands",
+            description="Commands for creating and managing private groups",
             color=discord.Color.blue()
         )
         
-        # Add your custom robot image as the thumbnail
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
-        
-        # Private Groups commands
-        embed.add_field(
-            name="Private Group Commands",
-            value="Commands for creating and managing private groups",
-            inline=False
-        )
         
         embed.add_field(
             name="!mkgrp [@person1] [@person2] ...",
@@ -55,12 +66,17 @@ class PrivateGroups(commands.Cog):
             inline=False
         )
         
-        # Gemini Chat commands
-        embed.add_field(
-            name="Emo Chat Commands",
-            value="Commands for chatting with Emo (AI assistant)",
-            inline=False
+        embed.set_footer(text="Select another category from the dropdown menu")
+        return embed
+        
+    def create_emo_chat_embed(self):
+        embed = discord.Embed(
+            title="Emo Chat Commands",
+            description="Commands for chatting with Emo (AI assistant)",
+            color=discord.Color.purple()
         )
+        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
         
         embed.add_field(
             name="!ask [question]",
@@ -89,14 +105,19 @@ class PrivateGroups(commands.Cog):
                 "Example: `!list_models`",
             inline=False
         )
-
-        # D&D Game commands
-        embed.add_field(
-            name="D&D Game Commands",
-            value="Commands for Dungeons & Dragons gameplay",
-            inline=False
+        
+        embed.set_footer(text="Select another category from the dropdown menu")
+        return embed
+        
+    def create_dnd_embed(self):
+        embed = discord.Embed(
+            title="D&D Game Commands",
+            description="Commands for Dungeons & Dragons gameplay",
+            color=discord.Color.dark_green()
         )
-
+        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
+        
         embed.add_field(
             name="!dnd",
             value="Setup a new Dungeons & Dragons game session.\n"
@@ -118,13 +139,18 @@ class PrivateGroups(commands.Cog):
             inline=False
         )
         
-        # Utility commands
-        embed.add_field(
-            name="Utility Commands",
-            value="General utility commands",
-            inline=False
+        embed.set_footer(text="Select another category from the dropdown menu")
+        return embed
+        
+    def create_utility_embed(self):
+        embed = discord.Embed(
+            title="Utility Commands",
+            description="General utility commands",
+            color=discord.Color.light_gray()
         )
-
+        
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
+        
         embed.add_field(
             name="!test",
             value="Simple test command to check if the bot is working.\n"
@@ -139,10 +165,46 @@ class PrivateGroups(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="For more help, contact a server administrator.")
-        
-        await ctx.send(embed=embed)
+        embed.set_footer(text="Select another category from the dropdown menu")
+        return embed
 
+class CommandsView(ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=180)  # 3 minute timeout
+        self.add_item(CommandsDropdown(bot))
+
+class PrivateGroups(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.command()
+    async def list(self, ctx):
+        """Lists all available commands with descriptions and usage information."""
+        # Create initial embed
+        embed = discord.Embed(
+            title="Bot Commands List",
+            description="Please select a command category from the dropdown menu below to see available commands.",
+            color=discord.Color.blue()
+        )
+        
+        # Add your custom robot image as the thumbnail
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp?ex=67d270a5&is=67d11f25&hm=b6a562e73ea4b553164a62a8c31ace5825ec9c3888d29cb78eae36bb5d3ba06b&=&format=webp")
+        
+        embed.add_field(
+            name="Available Categories",
+            value="• Private Group Commands\n• Emo Chat Commands\n• D&D Game Commands\n• Utility Commands",
+            inline=False
+        )
+        
+        embed.set_footer(text="Use the dropdown menu below to see specific commands")
+        
+        # Create view with dropdown
+        view = CommandsView(self.bot)
+        
+        # Send the message with the view
+        await ctx.send(embed=embed, view=view)
+
+    # Keep all other commands the same
     @commands.command()
     async def mkgrp(self, ctx, *members: discord.Member):
         """Creates a private text channel for the command invoker and mentioned members."""
@@ -282,20 +344,21 @@ class PrivateGroups(commands.Cog):
         if ctx.channel.topic is None or not ctx.channel.topic.startswith("Creator: "):
             await ctx.send("This is not a private group channel.")
             return
-        
+    
         creator_id = int(ctx.channel.topic.split(": ")[1].split(",")[0])
         if ctx.author.id != creator_id:
             await ctx.send("Only the creator can delete the group.")
             return
-        
+    
         # Delete voice channel if it exists
         if ", Voice: " in ctx.channel.topic:
             voice_channel_id = int(ctx.channel.topic.split(", Voice: ")[1])
             voice_channel = ctx.guild.get_channel(voice_channel_id)
             if voice_channel:
                 await voice_channel.delete()
-        
+    
+        await ctx.send("This private group will be deleted in a few seconds...")
         await ctx.channel.delete()
 
-async def setup(bot):
-    await bot.add_cog(PrivateGroups(bot))
+    async def setup(bot):
+        await bot.add_cog(PrivateGroups(bot))
