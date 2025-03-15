@@ -71,6 +71,13 @@ class PrivateGroups(commands.Cog):
         )
 
         embed.add_field(
+            name="!dnd",
+            value="Setup a new Dungeons & Dragons game session.\n"
+                "Example: `!dnd`",
+            inline=False
+        )
+
+        embed.add_field(
             name="!test",
             value="Simple test command to check if the bot is working.\n"
                  "Example: `!test`",

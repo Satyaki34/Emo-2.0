@@ -72,11 +72,19 @@ async def on_ready():
         print(f"Failed to load cogs.private_groups: {e}")
     
     print(f"Loaded cogs: {[cog for cog in bot.cogs]}")
+
     try:
         await bot.load_extension('cogs.gemini_chat')
         print("Successfully loaded cogs.gemini_chat")
     except Exception as e:
         print(f"Failed to load cogs.gemini_chat: {e}")
+    
+    try:
+        await bot.load_extension('cogs.dnd_game')
+        print("Successfully loaded cogs.dnd_game")
+    except Exception as e:
+        print(f"Failed to load cogs.dnd_game: {e}")
+        
 @bot.command()
 async def test(ctx):
     await ctx.send("Test command works!")
