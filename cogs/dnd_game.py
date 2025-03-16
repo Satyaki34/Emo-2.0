@@ -333,6 +333,20 @@ class DnDGame(commands.Cog):
             await ctx.send("Only the game creator or Game Master can set up the campaign.")
             return
         
+        # New: Check if all players have created characters
+        missing_characters = []
+        for player_id in game["player_ids"]:
+            if player_id not in game.get("characters", {}):
+                player = self.bot.get_user(int(player_id))
+                player_name = player.display_name if player else f"User {player_id}"
+                missing_characters.append(player_name)
+        
+        if missing_characters:
+            missing_str = ", ".join(missing_characters)
+            await ctx.send(f"Please make your character first using `!creation`. Players without characters: {missing_str}")
+            return
+        
+        # Proceed with campaign setup if all players have characters
         embed = discord.Embed(
             title="📜 Campaign Setup 📜",
             description="Let’s create your D&D campaign! I’ll generate a campaign based on your theme.",
@@ -362,10 +376,8 @@ class DnDGame(commands.Cog):
             )
             
             try:
-                # Attempt to parse the response directly as JSON
                 campaign_data = json.loads(campaign_response)
             except json.JSONDecodeError:
-                # Fallback: Extract JSON from text if it's embedded
                 import re
                 json_match = re.search(r'\{.*\}', campaign_response, re.DOTALL)
                 if json_match:
@@ -380,7 +392,6 @@ class DnDGame(commands.Cog):
                     print(f"Invalid JSON response: {campaign_response}")
                     return
             
-            # Validate required fields
             required_fields = ["main_plot", "locations", "antagonist", "side_quests", "starting_scenario"]
             if not all(field in campaign_data for field in required_fields):
                 await ctx.send("Error: Campaign generation failed to include all required elements.")
@@ -397,13 +408,11 @@ class DnDGame(commands.Cog):
             }
             await self.save_game(channel_id, game)
             
-            # Generate narration before creating the embed
             narration_response = await self.get_gemini_response(
                 self.system_prompts["narration"],
                 f"Narrate the starting scenario: {campaign_data['starting_scenario']['description']}"
             )
             
-            # Create embed with narration included
             summary_embed = discord.Embed(
                 title=f"🎉 Campaign Created: {campaign_data['name']} 🎉",
                 description="Your adventure is ready to begin!",
@@ -414,9 +423,8 @@ class DnDGame(commands.Cog):
             summary_embed.add_field(name="Antagonist", value=f"{campaign_data['antagonist']['name']} - {campaign_data['antagonist']['motivation']}", inline=False)
             summary_embed.add_field(name="Side Quests", value="\n".join(campaign_data["side_quests"]), inline=False)
             summary_embed.add_field(name="Starting Scenario", value=campaign_data["starting_scenario"]["description"], inline=False)
-            summary_embed.add_field(name="Scene Narration", value=narration_response[:1024], inline=False)  # Limit to 1024 chars per field
+            summary_embed.add_field(name="Scene Narration", value=narration_response[:1024], inline=False)
             
-            # Handle narration exceeding Discord's 1024 character limit per field
             if len(narration_response) > 1024:
                 narration_parts = [narration_response[i:i+1024] for i in range(1024, len(narration_response), 1024)]
                 for i, part in enumerate(narration_parts, 1):

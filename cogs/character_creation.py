@@ -9,48 +9,38 @@ class CharacterCreation(commands.Cog):
         self.parent_cog = None
     
     async def cog_load(self):
-        # Get reference to the parent DnDGame cog
         self.parent_cog = self.bot.get_cog("DnDGame")
         if not self.parent_cog:
             print("WARNING: DnDGame cog not found. Character creation requires DnDGame cog.")
     
     @commands.command(name="creation")
     async def character_creation(self, ctx):
-        """Create a character for the current D&D game
+        """Create a character for the current D&D game with a guided process
         
         Example: !creation
         """
-        # Check if DnDGame cog is loaded
         if not self.parent_cog:
             await ctx.send("Error: DnD game system is not currently available.")
             return
         
         channel_id = str(ctx.channel.id)
-        
-        # Check if there's an active game in this channel
         game = await self.parent_cog.get_game(channel_id)
         if not game:
             await ctx.send("There is no active D&D game in this channel. Use `!dnd` to create one first.")
             return
         
-        # Check if user is a player in this game
         user_id = str(ctx.author.id)
         if user_id not in game["player_ids"]:
             await ctx.send("You are not a player in this D&D game.")
             return
         
-        # Check if characters exist in the game data
         if "characters" not in game:
             game["characters"] = {}
         
-        # Check if player already has a character
         if user_id in game["characters"]:
-            # Ask if they want to overwrite
             confirm_msg = await ctx.send(f"{ctx.author.mention}, you already have a character. Do you want to create a new one? (yes/no)")
-            
             def check_confirm(m):
                 return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]
-            
             try:
                 confirm_response = await self.bot.wait_for('message', check=check_confirm, timeout=30)
                 if confirm_response.content.lower() != "yes":
@@ -60,134 +50,116 @@ class CharacterCreation(commands.Cog):
                 await ctx.send("Character creation timed out.")
                 return
         
-        # Send character creation instructions
-        instruction_embed = discord.Embed(
-            title="🧙‍♂️ Character Creation 📝",
-            description="Please provide your character information in the following format:",
-            color=discord.Color.blue()
-        )
+        # Guided character creation
+        character_data = {"level": "0", "created_at": datetime.now().isoformat()}
+        steps = [
+            ("name", "What’s your character’s **name**? (e.g., 'Thorin')", False),
+            ("class", "What **class** is your character? (e.g., 'Fighter', 'Wizard')", False),
+            ("race", "What **race** is your character? (e.g., 'Human', 'Elf')", False),
+            ("backstory", "What’s your character’s **backstory**? (e.g., 'Raised in the mountains after a dragon attack', optional - press Enter to skip)", True),
+            ("alignment", "What’s your character’s **alignment**? (e.g., 'Lawful Good', optional - press Enter to skip)", True),
+        ]
         
-        instruction_embed.add_field(
-            name="Character Format",
-            value=(
-                "**Name:** [Character Name]\n"
-                "**Class:** [Character Class]\n"
-                "**Level:** 0 (must start at 0)\n"
-                "**Race:** [Character Race]\n"
-                "**Background:** [Character Background]\n"
-                "**Alignment:** [Character Alignment]\n"
-                "**Ability Scores:**\n"
-                "- **Strength:** [Score]\n"
-                "- **Dexterity:** [Score]\n"
-                "- **Constitution:** [Score]\n"
-                "- **Intelligence:** [Score]\n"
-                "- **Wisdom:** [Score]\n"
-                "- **Charisma:** [Score]"
-            ),
-            inline=False
-        )
+        await ctx.send("### Let’s create your character step-by-step! Reply to each question. Type '**cancel**' to stop at any time.")
         
-        instruction_embed.set_footer(text="Type your character information in a single message.")
-        
-        await ctx.send(embed=instruction_embed)
-        
-        # Wait for character creation response
-        def check_character(m):
+        def check_response(m):
             return m.author == ctx.author and m.channel == ctx.channel
         
+        for key, prompt, optional in steps:
+            await ctx.send(prompt)
+            try:
+                response = await self.bot.wait_for('message', check=check_response, timeout=60)
+                if response.content.lower() == "cancel":
+                    await ctx.send("### Character creation cancelled.")
+                    return
+                value = response.content.strip()
+                if not value and not optional:
+                    await ctx.send(f"### {key.capitalize()} is required. Please try again.")
+                    continue
+                if value:
+                    character_data[key] = value
+            except asyncio.TimeoutError:
+                await ctx.send(f"### Timed out waiting for {key}. Character creation cancelled.")
+                return
+        
+        # Ability scores with validation
+        ability_scores = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+        await ctx.send("### Now, enter your ability scores (3-18). Type each score as a number, one per message.")
+        
+        for ability in ability_scores:
+            while True:
+                await ctx.send(f"What’s your **{ability.capitalize()}** score? (3-18, or Enter for 10)")
+                try:
+                    response = await self.bot.wait_for('message', check=check_response, timeout=60)
+                    if response.content.lower() == "cancel":
+                        await ctx.send("### Character creation cancelled.")
+                        return
+                    value = response.content.strip()
+                    if not value:
+                        character_data[ability] = "10"
+                        break
+                    try:
+                        score = int(value)
+                        if 3 <= score <= 18:
+                            character_data[ability] = str(score)
+                            break
+                        else:
+                            await ctx.send("### Score must be between 3 and 18. Try again.")
+                    except ValueError:
+                        await ctx.send("### Please enter a valid number (or Enter for 10).")
+                except asyncio.TimeoutError:
+                    await ctx.send(f"### Timed out waiting for {ability}. Character creation cancelled.")
+                    return
+        
+        # Final confirmation
+        confirm_embed = discord.Embed(
+            title="Character Confirmation",
+            description="Here’s your character. Reply 'yes' to save, 'no' to cancel.",
+            color=discord.Color.blue()
+        )
+        self._add_character_fields(confirm_embed, character_data, ctx.author.display_name)
+        await ctx.send(embed=confirm_embed)
+        
         try:
-            character_msg = await self.bot.wait_for('message', check=check_character, timeout=300)
-            
-            # Parse the character information
-            # This is a simple parsing, you may want to enhance it for better validation
-            character_data = {
-                "raw_input": character_msg.content,
-                "created_at": datetime.now().isoformat()
-            }
-            
-            # Parse the character information into structured data
-            lines = character_msg.content.split('\n')
-            for line in lines:
-                if ":" in line:
-                    key, value = line.split(":", 1)
-                    key = key.strip().lower()
-                    value = value.strip()
-                    
-                    # Map common keys to standard names
-                    if "name" in key:
-                        character_data["name"] = value
-                    elif "class" in key:
-                        character_data["class"] = value
-                    elif "level" in key:
-                        character_data["level"] = value
-                    elif "race" in key:
-                        character_data["race"] = value
-                    elif "background" in key:
-                        character_data["background"] = value
-                    elif "alignment" in key:
-                        character_data["alignment"] = value
-                    elif "strength" in key:
-                        character_data["strength"] = value
-                    elif "dexterity" in key:
-                        character_data["dexterity"] = value
-                    elif "constitution" in key:
-                        character_data["constitution"] = value
-                    elif "intelligence" in key:
-                        character_data["intelligence"] = value
-                    elif "wisdom" in key:
-                        character_data["wisdom"] = value
-                    elif "charisma" in key:
-                        character_data["charisma"] = value
-            
-            # Check if the essential fields are present
-            required_fields = ["name", "class", "level", "race"]
-            missing_fields = [field for field in required_fields if field not in character_data]
-            
-            if missing_fields:
-                await ctx.send(f"Missing required fields: {', '.join(missing_fields)}. Please try again.")
+            confirm = await self.bot.wait_for('message', check=check_response, timeout=60)
+            if confirm.content.lower() != "yes":
+                await ctx.send("### Character creation cancelled.")
                 return
-            
-            # Check if level is 0
-            if character_data.get("level", "").strip() != "0":
-                await ctx.send("New characters must start at level 0. Please try again.")
-                return
-            
-            # Create character embed
-            character_embed = discord.Embed(
-                title=f"Character: {character_data.get('name', 'Unknown')}",
-                description=f"Created by {ctx.author.display_name}",
-                color=discord.Color.green()
-            )
-            
-            # Add character details to embed
-            character_embed.add_field(name="Class", value=character_data.get("class", "Unknown"), inline=True)
-            character_embed.add_field(name="Level", value=character_data.get("level", "0"), inline=True)
-            character_embed.add_field(name="Race", value=character_data.get("race", "Unknown"), inline=True)
-            character_embed.add_field(name="Background", value=character_data.get("background", "Unknown"), inline=True)
-            character_embed.add_field(name="Alignment", value=character_data.get("alignment", "Unknown"), inline=True)
-            
-            # Add ability scores
-            ability_scores = (
-                f"**STR:** {character_data.get('strength', '?')} | "
-                f"**DEX:** {character_data.get('dexterity', '?')} | "
-                f"**CON:** {character_data.get('constitution', '?')}\n"
-                f"**INT:** {character_data.get('intelligence', '?')} | "
-                f"**WIS:** {character_data.get('wisdom', '?')} | "
-                f"**CHA:** {character_data.get('charisma', '?')}"
-            )
-            character_embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
-            
-            # Add character data to the game
-            game["characters"][user_id] = character_data
-            
-            # Update game state
-            game["last_updated"] = datetime.now().isoformat()
-            await self.parent_cog.save_game(channel_id, game)
-            
-            await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=character_embed)
-            
         except asyncio.TimeoutError:
-            await ctx.send("Character creation timed out. Please try again when you're ready.")
+            await ctx.send("### Confirmation timed out. Character creation cancelled.")
+            return
+        
+        # Save character
+        game["characters"][user_id] = character_data
+        game["last_updated"] = datetime.now().isoformat()
+        await self.parent_cog.save_game(channel_id, game)
+        
+        success_embed = discord.Embed(
+            title=f"Character: {character_data.get('name', 'Unknown')}",
+            description=f"Created by {ctx.author.display_name}",
+            color=discord.Color.green()
+        )
+        self._add_character_fields(success_embed, character_data)
+        await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
+    
+    def _add_character_fields(self, embed, character_data, author_name=None):
+        """Helper to add character fields to an embed"""
+        embed.add_field(name="Class", value=character_data.get("class", "Unknown"), inline=True)
+        embed.add_field(name="Level", value=character_data.get("level", "0"), inline=True)
+        embed.add_field(name="Race", value=character_data.get("race", "Unknown"), inline=True)
+        embed.add_field(name="Backstory", value=character_data.get("backstory", "None"), inline=False)
+        embed.add_field(name="Alignment", value=character_data.get("alignment", "Neutral"), inline=True)
+        ability_scores = (
+            f"**STR:** {character_data.get('strength', '10')} | "
+            f"**DEX:** {character_data.get('dexterity', '10')} | "
+            f"**CON:** {character_data.get('constitution', '10')}\n"
+            f"**INT:** {character_data.get('intelligence', '10')} | "
+            f"**WIS:** {character_data.get('wisdom', '10')} | "
+            f"**CHA:** {character_data.get('charisma', '10')}"
+        )
+        embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
+        if author_name:
+            embed.set_footer(text=f"Created by {author_name}")  # Move 'Created by' to footer
     
     @commands.command(name="view_character")
     async def view_character(self, ctx, member: discord.Member = None):
@@ -209,12 +181,12 @@ class CharacterCreation(commands.Cog):
         # Check if there's an active game in this channel
         game = await self.parent_cog.get_game(channel_id)
         if not game:
-            await ctx.send("There is no active D&D game in this channel.")
+            await ctx.send("### There is no active D&D game in this channel.")
             return
         
         # Check if characters exist in the game data
         if "characters" not in game or user_id not in game["characters"]:
-            await ctx.send(f"{member.display_name} doesn't have a character in this game.")
+            await ctx.send(f"### {member.display_name} doesn't have a character in this game.")
             return
         
         # Get character data
@@ -262,12 +234,12 @@ class CharacterCreation(commands.Cog):
         # Check if there's an active game in this channel
         game = await self.parent_cog.get_game(channel_id)
         if not game:
-            await ctx.send("There is no active D&D game in this channel.")
+            await ctx.send("### There is no active D&D game in this channel.")
             return
         
         # Check if characters exist in the game data
         if "characters" not in game or not game["characters"]:
-            await ctx.send("No characters have been created in this game yet.")
+            await ctx.send("### No characters have been created in this game yet.")
             return
         
         # Create character list embed
