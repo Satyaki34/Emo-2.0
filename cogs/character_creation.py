@@ -1,12 +1,62 @@
 import discord
 from discord.ext import commands
 import asyncio
+from discord import ui
 from datetime import datetime
+from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE  # Import from new file
+
+class RaceDropdown(ui.Select):
+    def __init__(self):
+        races = [
+            "Human", "Elf", "Dwarf", "Halfling", "Gnome",
+            "Dragonborn", "Tiefling", "Half-Elf", "Half-Orc"
+        ]
+        options = [discord.SelectOption(label=race, value=race) for race in races]
+        super().__init__(
+            placeholder="Select your character’s race...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_race = self.values[0]
+        self.view.stop()
+
+class ClassDropdown(ui.Select):
+    def __init__(self):
+        classes = [
+            "Artificer", "Barbarian", "Bard", "Cleric", "Druid",
+            "Fighter", "Monk", "Paladin", "Ranger", "Rogue",
+            "Sorcerer", "Warlock", "Wizard"
+        ]
+        options = [discord.SelectOption(label=cls, value=cls) for cls in classes]
+        super().__init__(
+            placeholder="Select your character’s class...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_class = self.values[0]
+        self.view.stop()
+
+class SelectionView(ui.View):
+    def __init__(self, timeout=60):
+        super().__init__(timeout=timeout)
+        self.selected_race = None
+        self.selected_class = None
+    
+    async def on_timeout(self):
+        self.stop()
 
 class CharacterCreation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.parent_cog = None
+        self.character_images = CHARACTER_IMAGES  # Use imported dictionary
+        self.default_image = DEFAULT_IMAGE       # Use imported default
     
     async def cog_load(self):
         self.parent_cog = self.bot.get_cog("DnDGame")
@@ -52,47 +102,86 @@ class CharacterCreation(commands.Cog):
         
         # Guided character creation
         character_data = {"level": "0", "created_at": datetime.now().isoformat()}
-        steps = [
-            ("name", "What’s your character’s **name**? (e.g., 'Thorin')", False),
-            ("class", "What **class** is your character? (e.g., 'Fighter', 'Wizard')", False),
-            ("race", "What **race** is your character? (e.g., 'Human', 'Elf')", False),
-            ("backstory", "What’s your character’s **backstory**? (e.g., 'Raised in the mountains after a dragon attack', optional - press Enter to skip)", True),
-            ("alignment", "What’s your character’s **alignment**? (e.g., 'Lawful Good', optional - press Enter to skip)", True),
-        ]
-        
-        await ctx.send("### Let’s create your character step-by-step! Reply to each question. Type '**cancel**' to stop at any time.")
+        await ctx.send("Let’s create your character step-by-step! Follow the prompts below. You can type 'cancel' for text inputs or wait for dropdowns to timeout to stop.")
         
         def check_response(m):
             return m.author == ctx.author and m.channel == ctx.channel
         
-        for key, prompt, optional in steps:
-            await ctx.send(prompt)
-            try:
-                response = await self.bot.wait_for('message', check=check_response, timeout=60)
-                if response.content.lower() == "cancel":
-                    await ctx.send("### Character creation cancelled.")
-                    return
-                value = response.content.strip()
-                if not value and not optional:
-                    await ctx.send(f"### {key.capitalize()} is required. Please try again.")
-                    continue
-                if value:
-                    character_data[key] = value
-            except asyncio.TimeoutError:
-                await ctx.send(f"### Timed out waiting for {key}. Character creation cancelled.")
+        # Step 1: Name
+        await ctx.send("What’s your character’s name? (e.g., 'Thorin')")
+        try:
+            response = await self.bot.wait_for('message', check=check_response, timeout=60)
+            if response.content.lower() == "cancel":
+                await ctx.send("Character creation cancelled.")
                 return
+            name = response.content.strip()
+            if not name:
+                await ctx.send("Name is required. Please try again.")
+                return
+            character_data["name"] = name
+        except asyncio.TimeoutError:
+            await ctx.send("Timed out waiting for name. Character creation cancelled.")
+            return
         
-        # Ability scores with validation
+        # Step 2: Class
+        class_view = SelectionView()
+        class_view.add_item(ClassDropdown())
+        class_msg = await ctx.send("Choose your character’s class from the dropdown below:", view=class_view)
+        await class_view.wait()
+        if not class_view.selected_class:
+            await class_msg.edit(content="Timed out waiting for class selection. Character creation cancelled.", view=None)
+            return
+        character_data["class"] = class_view.selected_class
+        
+        # Step 3: Race
+        race_view = SelectionView()
+        race_view.add_item(RaceDropdown())
+        race_msg = await ctx.send("Choose your character’s race from the dropdown below:", view=race_view)
+        await race_view.wait()
+        if not race_view.selected_race:
+            await race_msg.edit(content="Timed out waiting for race selection. Character creation cancelled.", view=None)
+            return
+        character_data["race"] = race_view.selected_race
+        
+        # Step 4: Backstory
+        await ctx.send("What’s your character’s backstory? (e.g., 'Raised in the mountains after a dragon attack', optional - press Enter to skip)")
+        try:
+            response = await self.bot.wait_for('message', check=check_response, timeout=60)
+            if response.content.lower() == "cancel":
+                await ctx.send("Character creation cancelled.")
+                return
+            backstory = response.content.strip()
+            if backstory:
+                character_data["backstory"] = backstory
+        except asyncio.TimeoutError:
+            await ctx.send("Timed out waiting for backstory. Character creation cancelled.")
+            return
+        
+        # Step 5: Alignment
+        await ctx.send("What’s your character’s alignment? (e.g., 'Lawful Good', optional - press Enter to skip)")
+        try:
+            response = await self.bot.wait_for('message', check=check_response, timeout=60)
+            if response.content.lower() == "cancel":
+                await ctx.send("Character creation cancelled.")
+                return
+            alignment = response.content.strip()
+            if alignment:
+                character_data["alignment"] = alignment
+        except asyncio.TimeoutError:
+            await ctx.send("Timed out waiting for alignment. Character creation cancelled.")
+            return
+        
+        # Ability scores
         ability_scores = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-        await ctx.send("### Now, enter your ability scores (3-18). Type each score as a number, one per message.")
+        await ctx.send("Now, enter your ability scores (3-18). Type each score as a number, one per message. Press Enter to use 10 as a default.")
         
         for ability in ability_scores:
             while True:
-                await ctx.send(f"What’s your **{ability.capitalize()}** score? (3-18, or Enter for 10)")
+                await ctx.send(f"What’s your {ability.capitalize()} score? (3-18, or Enter for 10)")
                 try:
                     response = await self.bot.wait_for('message', check=check_response, timeout=60)
                     if response.content.lower() == "cancel":
-                        await ctx.send("### Character creation cancelled.")
+                        await ctx.send("Character creation cancelled.")
                         return
                     value = response.content.strip()
                     if not value:
@@ -104,11 +193,11 @@ class CharacterCreation(commands.Cog):
                             character_data[ability] = str(score)
                             break
                         else:
-                            await ctx.send("### Score must be between 3 and 18. Try again.")
+                            await ctx.send("Score must be between 3 and 18. Try again.")
                     except ValueError:
-                        await ctx.send("### Please enter a valid number (or Enter for 10).")
+                        await ctx.send("Please enter a valid number (or Enter for 10).")
                 except asyncio.TimeoutError:
-                    await ctx.send(f"### Timed out waiting for {ability}. Character creation cancelled.")
+                    await ctx.send(f"Timed out waiting for {ability}. Character creation cancelled.")
                     return
         
         # Final confirmation
@@ -123,10 +212,10 @@ class CharacterCreation(commands.Cog):
         try:
             confirm = await self.bot.wait_for('message', check=check_response, timeout=60)
             if confirm.content.lower() != "yes":
-                await ctx.send("### Character creation cancelled.")
+                await ctx.send("Character creation cancelled.")
                 return
         except asyncio.TimeoutError:
-            await ctx.send("### Confirmation timed out. Character creation cancelled.")
+            await ctx.send("Confirmation timed out. Character creation cancelled.")
             return
         
         # Save character
@@ -134,12 +223,16 @@ class CharacterCreation(commands.Cog):
         game["last_updated"] = datetime.now().isoformat()
         await self.parent_cog.save_game(channel_id, game)
         
+        # Success embed with image
         success_embed = discord.Embed(
             title=f"Character: {character_data.get('name', 'Unknown')}",
             description=f"Created by {ctx.author.display_name}",
             color=discord.Color.green()
         )
         self._add_character_fields(success_embed, character_data)
+        image_key = f"{character_data['race']}_{character_data['class']}"
+        image_url = self.character_images.get(image_key, self.default_image)
+        success_embed.set_thumbnail(url=image_url)
         await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
     
     def _add_character_fields(self, embed, character_data, author_name=None):
@@ -159,8 +252,8 @@ class CharacterCreation(commands.Cog):
         )
         embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
         if author_name:
-            embed.set_footer(text=f"Created by {author_name}")  # Move 'Created by' to footer
-    
+            embed.set_footer(text=f"Created by {author_name}")
+
     @commands.command(name="view_character")
     async def view_character(self, ctx, member: discord.Member = None):
         """View a character in the current D&D game
@@ -199,23 +292,13 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # Add character details to embed
-        character_embed.add_field(name="Class", value=character.get("class", "Unknown"), inline=True)
-        character_embed.add_field(name="Level", value=character.get("level", "0"), inline=True)
-        character_embed.add_field(name="Race", value=character.get("race", "Unknown"), inline=True)
-        character_embed.add_field(name="Background", value=character.get("background", "Unknown"), inline=True)
-        character_embed.add_field(name="Alignment", value=character.get("alignment", "Unknown"), inline=True)
+        # Add character details using helper
+        self._add_character_fields(character_embed, character, member.display_name)
         
-        # Add ability scores
-        ability_scores = (
-            f"**STR:** {character.get('strength', '?')} | "
-            f"**DEX:** {character.get('dexterity', '?')} | "
-            f"**CON:** {character.get('constitution', '?')}\n"
-            f"**INT:** {character.get('intelligence', '?')} | "
-            f"**WIS:** {character.get('wisdom', '?')} | "
-            f"**CHA:** {character.get('charisma', '?')}"
-        )
-        character_embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
+        # Add thumbnail
+        image_key = f"{character['race']}_{character['class']}"
+        image_url = self.character_images.get(image_key, self.default_image)
+        character_embed.set_thumbnail(url=image_url)
         
         await ctx.send(embed=character_embed)
     
