@@ -188,7 +188,7 @@ class DnDGame(commands.Cog):
         )
         await ctx.send(embed=embed)
         
-        await ctx.send("**Step 1:** Please tag all players who will participate (including yourself if you're playing)")
+        await ctx.send("**Step 1:** Please tag all `players` who will participate (including `yourself` if you're playing)")
         
         def check_message(m):
             return m.author == ctx.author and m.channel == ctx.channel
@@ -204,16 +204,16 @@ class DnDGame(commands.Cog):
             player_ids = [str(player.id) for player in mentioned_players]
             
             gm_embed = discord.Embed(
-                title="Game Master Selection",
+                title="Game Master Selection:-",
                 description="Who will be the Game Master (DM)?",
                 color=discord.Color.dark_purple()
             )
             options = "**0.** Emo (AI Game Master)\n"
             for i, player in enumerate(player_names, 1):
                 options += f"**{i}.** {player}\n"
-            gm_embed.add_field(name="Options", value=options)
+            gm_embed.add_field(name="Options:", value=options)
             await ctx.send(embed=gm_embed)
-            await ctx.send("Enter the number of your choice:")
+            await ctx.send("Enter the `number` of your choice:")
             
             gm_choice_msg = await self.bot.wait_for('message', check=check_message, timeout=60)
             try:
@@ -330,7 +330,7 @@ class DnDGame(commands.Cog):
             return
         
         if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
-            await ctx.send("Only the game creator or Game Master can set up the campaign.")
+            await ctx.send("Only the game creator or Game Master(DM) can set up the campaign.")
             return
         
         # New: Check if all players have created characters

@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 from discord import ui
 from datetime import datetime
-from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE  # Import from new file
+from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE
 
 class RaceDropdown(ui.Select):
     def __init__(self):
@@ -13,14 +13,19 @@ class RaceDropdown(ui.Select):
         ]
         options = [discord.SelectOption(label=race, value=race) for race in races]
         super().__init__(
-            placeholder="Select your character’s race...",
+            placeholder="Choose your race...",
             min_values=1,
             max_values=1,
             options=options
         )
     
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()  # Acknowledge the interaction
         self.view.selected_race = self.values[0]
+        # Update the embed to confirm selection
+        embed = interaction.message.embeds[0]
+        embed.description = f"Race selected: **{self.values[0]}**"
+        await interaction.message.edit(embed=embed, view=None)
         self.view.stop()
 
 class ClassDropdown(ui.Select):
@@ -32,14 +37,19 @@ class ClassDropdown(ui.Select):
         ]
         options = [discord.SelectOption(label=cls, value=cls) for cls in classes]
         super().__init__(
-            placeholder="Select your character’s class...",
+            placeholder="Choose your class...",
             min_values=1,
             max_values=1,
             options=options
         )
     
     async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()  # Acknowledge the interaction
         self.view.selected_class = self.values[0]
+        # Update the embed to confirm selection
+        embed = interaction.message.embeds[0]
+        embed.description = f"Class selected: **{self.values[0]}**"
+        await interaction.message.edit(embed=embed, view=None)
         self.view.stop()
 
 class SelectionView(ui.View):
@@ -55,8 +65,8 @@ class CharacterCreation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.parent_cog = None
-        self.character_images = CHARACTER_IMAGES  # Use imported dictionary
-        self.default_image = DEFAULT_IMAGE       # Use imported default
+        self.character_images = CHARACTER_IMAGES
+        self.default_image = DEFAULT_IMAGE
     
     async def cog_load(self):
         self.parent_cog = self.bot.get_cog("DnDGame")
@@ -88,7 +98,13 @@ class CharacterCreation(commands.Cog):
             game["characters"] = {}
         
         if user_id in game["characters"]:
-            confirm_msg = await ctx.send(f"{ctx.author.mention}, you already have a character. Do you want to create a new one? (yes/no)")
+            confirm_embed = discord.Embed(
+                title="⚔️ Replace Character?",
+                description=f"{ctx.author.mention}, you already have a character. Want to create a new one?",
+                color=discord.Color.gold()
+            )
+            confirm_embed.add_field(name="Reply", value="Type `yes` or `no`", inline=False)
+            confirm_msg = await ctx.send(embed=confirm_embed)
             def check_confirm(m):
                 return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]
             try:
@@ -97,18 +113,30 @@ class CharacterCreation(commands.Cog):
                     await ctx.send("Character creation cancelled.")
                     return
             except asyncio.TimeoutError:
-                await ctx.send("Character creation timed out.")
+                await ctx.send("Timed out. Character creation cancelled.")
                 return
         
-        # Guided character creation
-        character_data = {"level": "0", "created_at": datetime.now().isoformat()}
-        await ctx.send("Let’s create your character step-by-step! Follow the prompts below. You can type 'cancel' for text inputs or wait for dropdowns to timeout to stop.")
+        # Start character creation
+        character_data = {"level": "1", "created_at": datetime.now().isoformat()}
+        intro_embed = discord.Embed(
+            title="✨ Character Creation ✨",
+            description="Let’s craft your D&D legend step-by-step! Answer each prompt below.\nType `cancel` at any text step to stop.",
+            color=discord.Color.blue()
+        )
+        intro_embed.set_footer(text=f"For {ctx.author.display_name}")
+        await ctx.send(embed=intro_embed)
         
         def check_response(m):
             return m.author == ctx.author and m.channel == ctx.channel
         
         # Step 1: Name
-        await ctx.send("What’s your character’s name? (e.g., 'Thorin')")
+        name_embed = discord.Embed(
+            title="🗡️ Step 1/6: Character Name",
+            description="What’s your character’s name?\n**Example:** Thorin",
+            color=discord.Color.blue()
+        )
+        name_embed.add_field(name="Instructions", value="Reply with the name below.", inline=False)
+        await ctx.send(embed=name_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
@@ -116,7 +144,7 @@ class CharacterCreation(commands.Cog):
                 return
             name = response.content.strip()
             if not name:
-                await ctx.send("Name is required. Please try again.")
+                await ctx.send("Name is required. Character creation cancelled.")
                 return
             character_data["name"] = name
         except asyncio.TimeoutError:
@@ -124,27 +152,43 @@ class CharacterCreation(commands.Cog):
             return
         
         # Step 2: Class
+        class_embed = discord.Embed(
+            title="⚒️ Step 2/6: Character Class",
+            description="What’s your character’s class?",
+            color=discord.Color.blue()
+        )
         class_view = SelectionView()
         class_view.add_item(ClassDropdown())
-        class_msg = await ctx.send("Choose your character’s class from the dropdown below:", view=class_view)
+        class_msg = await ctx.send(embed=class_embed, view=class_view)
         await class_view.wait()
         if not class_view.selected_class:
-            await class_msg.edit(content="Timed out waiting for class selection. Character creation cancelled.", view=None)
+            await class_msg.edit(content="Timed out waiting for class selection. Character creation cancelled.", embed=None, view=None)
             return
         character_data["class"] = class_view.selected_class
         
         # Step 3: Race
+        race_embed = discord.Embed(
+            title="🌍 Step 3/6: Character Race",
+            description="What’s your character’s race?",
+            color=discord.Color.blue()
+        )
         race_view = SelectionView()
         race_view.add_item(RaceDropdown())
-        race_msg = await ctx.send("Choose your character’s race from the dropdown below:", view=race_view)
+        race_msg = await ctx.send(embed=race_embed, view=race_view)
         await race_view.wait()
         if not race_view.selected_race:
-            await race_msg.edit(content="Timed out waiting for race selection. Character creation cancelled.", view=None)
+            await race_msg.edit(content="Timed out waiting for race selection. Character creation cancelled.", embed=None, view=None)
             return
         character_data["race"] = race_view.selected_race
         
         # Step 4: Backstory
-        await ctx.send("What’s your character’s backstory? (e.g., 'Raised in the mountains after a dragon attack', optional - press Enter to skip)")
+        backstory_embed = discord.Embed(
+            title="📜 Step 4/6: Backstory",
+            description="What’s your character’s backstory?\n**Example:** Raised in the mountains after a dragon attack, Abandoned as a sacrifice to ancient forest spirits and raised by them to become their vengeful champion, etc.",
+            color=discord.Color.blue()
+        )
+        backstory_embed.add_field(name="Instructions", value="Reply with the backstory below.", inline=False)
+        await ctx.send(embed=backstory_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
@@ -158,7 +202,13 @@ class CharacterCreation(commands.Cog):
             return
         
         # Step 5: Alignment
-        await ctx.send("What’s your character’s alignment? (e.g., 'Lawful Good', optional - press Enter to skip)")
+        alignment_embed = discord.Embed(
+            title="⚖️ Step 5/6: Alignment",
+            description="What’s your character’s alignment?\n**Example:** Lawful Good, Neutral Evil, etc.)*",
+            color=discord.Color.blue()
+        )
+        alignment_embed.add_field(name="Instructions", value="Reply with the alignment below.", inline=False)
+        await ctx.send(embed=alignment_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
@@ -171,13 +221,20 @@ class CharacterCreation(commands.Cog):
             await ctx.send("Timed out waiting for alignment. Character creation cancelled.")
             return
         
-        # Ability scores
-        ability_scores = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
-        await ctx.send("Now, enter your ability scores (3-18). Type each score as a number, one per message. Press Enter to use 10 as a default.")
+        # Step 6: Ability Scores
+        ability_scores = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"]
+        scores_embed = discord.Embed(
+            title="💪 Step 6/6: Ability Scores",
+            description="Enter your ability scores (3-18). Reply with one number per message in this order:\n" +
+                        "\n".join([f"**{score}**" for score in ability_scores]) +
+                        "\n*(Press Enter for 10 as default)*",
+            color=discord.Color.blue()
+        )
+        scores_embed.add_field(name="Instructions", value="Start replying with scores below.", inline=False)
+        await ctx.send(embed=scores_embed)
         
         for ability in ability_scores:
             while True:
-                await ctx.send(f"What’s your {ability.capitalize()} score? (3-18, or Enter for 10)")
                 try:
                     response = await self.bot.wait_for('message', check=check_response, timeout=60)
                     if response.content.lower() == "cancel":
@@ -185,26 +242,34 @@ class CharacterCreation(commands.Cog):
                         return
                     value = response.content.strip()
                     if not value:
-                        character_data[ability] = "10"
+                        character_data[ability.lower()] = "10"
                         break
                     try:
                         score = int(value)
                         if 3 <= score <= 18:
-                            character_data[ability] = str(score)
+                            character_data[ability.lower()] = str(score)
                             break
                         else:
-                            await ctx.send("Score must be between 3 and 18. Try again.")
+                            await ctx.send(embed=discord.Embed(
+                                title="❌ Invalid Score",
+                                description=f"{ability} must be between 3 and 18. Try again.",
+                                color=discord.Color.red()
+                            ))
                     except ValueError:
-                        await ctx.send("Please enter a valid number (or Enter for 10).")
+                        await ctx.send(embed=discord.Embed(
+                            title="❌ Invalid Input",
+                            description="Please enter a valid number!!",
+                            color=discord.Color.red()
+                        ))
                 except asyncio.TimeoutError:
                     await ctx.send(f"Timed out waiting for {ability}. Character creation cancelled.")
                     return
         
         # Final confirmation
         confirm_embed = discord.Embed(
-            title="Character Confirmation",
-            description="Here’s your character. Reply 'yes' to save, 'no' to cancel.",
-            color=discord.Color.blue()
+            title="✅ Character Confirmation",
+            description="Here’s your character! Reply `yes` to save, `no` to cancel.",
+            color=discord.Color.gold()
         )
         self._add_character_fields(confirm_embed, character_data, ctx.author.display_name)
         await ctx.send(embed=confirm_embed)
@@ -223,9 +288,9 @@ class CharacterCreation(commands.Cog):
         game["last_updated"] = datetime.now().isoformat()
         await self.parent_cog.save_game(channel_id, game)
         
-        # Success embed with image
+        # Success embed
         success_embed = discord.Embed(
-            title=f"Character: {character_data.get('name', 'Unknown')}",
+            title=f"🎉 Character: {character_data.get('name', 'Unknown')}",
             description=f"Created by {ctx.author.display_name}",
             color=discord.Color.green()
         )
