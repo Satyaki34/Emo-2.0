@@ -8,6 +8,84 @@ import random
 import json
 from dotenv import load_dotenv
 from datetime import datetime
+from discord import ui
+
+class InventoryDropdown(ui.Select):
+    def __init__(self, inventory_options):
+        # Parse inventory options into separate choices
+        self.choices = []
+        for option in inventory_options:
+            if " OR " in option:
+                sub_options = option.split(" OR ")
+                for sub in sub_options:
+                    self.choices.append(sub.strip())
+            else:
+                self.choices.append(option.strip())
+        
+        options = [discord.SelectOption(label=choice, value=choice) for choice in self.choices]
+        super().__init__(
+            placeholder="Choose your inventory items...",
+            min_values=1,
+            max_values=len(self.choices),  # Allow selecting all unique items
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.view.selected_inventory = self.values
+        self.view.stop()
+
+class SkillsDropdown(ui.Select):
+    def __init__(self, skill_options, choose_count):
+        self.choose_count = choose_count
+        options = [discord.SelectOption(label=skill, value=skill) for skill in skill_options]
+        super().__init__(
+            placeholder=f"Choose {choose_count} skills...",
+            min_values=choose_count,
+            max_values=choose_count,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.view.selected_skills = self.values
+        self.view.stop()
+
+class SpellsDropdown(ui.Select):
+    def __init__(self, spell_type, options, choose_count):
+        self.choose_count = choose_count
+        self.spell_type = spell_type
+        placeholder = f"Choose {choose_count} {spell_type}s..."
+        options = [discord.SelectOption(label=spell, value=spell) for spell in options]
+        super().__init__(
+            placeholder=placeholder,
+            min_values=choose_count,
+            max_values=choose_count,
+            options=options
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        if self.spell_type == "Cantrip":
+            self.view.selected_cantrips = self.values
+        else:
+            self.view.selected_spells = self.values
+        self.view.stop()
+
+class SelectionView(ui.View):
+    def __init__(self, player_id, timeout=60):
+        super().__init__(timeout=timeout)
+        self.player_id = player_id
+        self.selected_inventory = None
+        self.selected_skills = None
+        self.selected_cantrips = None
+        self.selected_spells = None
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == int(self.player_id)
+    
+    async def on_timeout(self):
+        self.stop()
 
 class DnDGame(commands.Cog):
     def __init__(self, bot):
@@ -36,7 +114,7 @@ class DnDGame(commands.Cog):
                 self.use_mongo = False
                 self.active_games = {}
                 
-        self.gemini_model = None  # Changed from gemini_client to gemini_model
+        self.gemini_model = None
         self.system_prompts = {
             "campaign_creation": """
             You are Emo, an AI Dungeon Master for a text-based D&D campaign.
@@ -113,7 +191,6 @@ class DnDGame(commands.Cog):
         }
     
     async def setup_gemini_model(self):
-        """Set up the Gemini model by getting it from the GeminiChat cog"""
         if not self.gemini_model:
             gemini_cog = self.bot.get_cog('GeminiChat')
             if gemini_cog and hasattr(gemini_cog, 'model'):
@@ -123,17 +200,13 @@ class DnDGame(commands.Cog):
                 print("WARNING: GeminiChat cog not found or has no 'model' attribute.")
     
     async def get_gemini_response(self, system_prompt, user_prompt, history=None):
-        """Get a response from Gemini using the chat-based API"""
         await self.setup_gemini_model()
         if not self.gemini_model:
             return "Sorry, my storytelling brain isn’t working right now. Check if GeminiChat is set up correctly!"
         
         try:
-            # Start a new chat session for each request (no persistent history across calls)
             chat = self.gemini_model.start_chat(history=[])
-            # Send the system prompt first
             await asyncio.to_thread(chat.send_message, system_prompt)
-            # Then send the user prompt
             response = await asyncio.to_thread(chat.send_message, user_prompt)
             return response.text
         except Exception as e:
@@ -314,6 +387,7 @@ class DnDGame(commands.Cog):
     
     @commands.command(name="campaign_setup")
     async def campaign_setup(self, ctx):
+        """Sets up the campaign theme and welcomes players with character info and choices."""
         channel_id = str(ctx.channel.id)
         game = await self.get_game(channel_id)
         
@@ -330,10 +404,10 @@ class DnDGame(commands.Cog):
             return
         
         if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
-            await ctx.send("Only the game creator or Game Master(DM) can set up the campaign.")
+            await ctx.send("Only the game creator or Game Master (DM) can set up the campaign.")
             return
         
-        # New: Check if all players have created characters
+        # Check if all players have created characters
         missing_characters = []
         for player_id in game["player_ids"]:
             if player_id not in game.get("characters", {}):
@@ -346,15 +420,15 @@ class DnDGame(commands.Cog):
             await ctx.send(f"Please make your character first using `!creation`. Players without characters: {missing_str}")
             return
         
-        # Proceed with campaign setup if all players have characters
+        # Prompt for campaign theme
         embed = discord.Embed(
-            title="📜 Campaign Setup 📜",
-            description="Let’s create your D&D campaign! I’ll generate a campaign based on your theme.",
+            title="📜 Campaign Theme Selection 📜",
+            description="Let’s set the tone for your adventure!",
             color=discord.Color.dark_gold()
         )
         embed.add_field(
             name="Instructions",
-            value="Please provide a theme for the campaign (e.g., 'zombie apocalypse in a magical city', 'pirate adventure on cursed seas')."
+            value="Please provide a theme for the campaign (e.g., 'Dark Fantasy', 'Pirate Adventure')."
         )
         await ctx.send(embed=embed)
         
@@ -368,82 +442,160 @@ class DnDGame(commands.Cog):
                 await ctx.send("No theme provided. Campaign setup cancelled.")
                 return
             
-            await ctx.send("Generating your campaign... please wait.")
-            campaign_prompt = f"Generate a campaign based on the theme: '{theme}'"
-            campaign_response = await self.get_gemini_response(
-                self.system_prompts["campaign_creation"],
-                campaign_prompt
+            # Prepare welcome message with player mentions
+            player_mentions = ", ".join(f"<@{player_id}>" for player_id in game["player_ids"])
+            welcome_msg = (
+                f"Gather 'round, brave souls {player_mentions}! I, Emo, your trusty Game Master, "
+                f"welcome you to an epic saga woven in the tapestry of {theme}. Prepare your hearts "
+                f"and steel your spirits—our grand tale is about to unfold! When you're ready, brave "
+                f"travelers, use `!start` to embark on this wondrous journey."
             )
             
-            try:
-                campaign_data = json.loads(campaign_response)
-            except json.JSONDecodeError:
-                import re
-                json_match = re.search(r'\{.*\}', campaign_response, re.DOTALL)
-                if json_match:
-                    try:
-                        campaign_data = json.loads(json_match.group(0))
-                    except json.JSONDecodeError:
-                        await ctx.send("Error: Failed to extract valid JSON from AI response.")
-                        print(f"Invalid JSON response: {campaign_response}")
-                        return
-                else:
-                    await ctx.send("Error: Failed to parse campaign data from AI response.")
-                    print(f"Invalid JSON response: {campaign_response}")
-                    return
-            
-            required_fields = ["main_plot", "locations", "antagonist", "side_quests", "starting_scenario"]
-            if not all(field in campaign_data for field in required_fields):
-                await ctx.send("Error: Campaign generation failed to include all required elements.")
-                print(f"Missing fields in response: {campaign_response}")
-                return
-            
-            campaign_data["name"] = f"Campaign: {theme.capitalize()}"
-            game["campaign"] = campaign_data
+            # Update game with theme and state
+            game["theme"] = theme
             game["state"] = "active"
             game["last_updated"] = datetime.now().isoformat()
-            game["current_scene"] = {
-                "name": campaign_data["starting_scenario"].get("location", "Starting Location"),
-                "description": campaign_data["starting_scenario"].get("description", "The adventure begins...")
-            }
             await self.save_game(channel_id, game)
             
-            narration_response = await self.get_gemini_response(
-                self.system_prompts["narration"],
-                f"Narrate the starting scenario: {campaign_data['starting_scenario']['description']}"
-            )
+            # Send welcome message
+            await ctx.send(welcome_msg)
             
-            summary_embed = discord.Embed(
-                title=f"🎉 Campaign Created: {campaign_data['name']} 🎉",
-                description="Your adventure is ready to begin!",
-                color=discord.Color.green()
-            )
-            summary_embed.add_field(name="Main Plot", value=campaign_data["main_plot"], inline=False)
-            summary_embed.add_field(name="Key Locations", value="\n".join(campaign_data["locations"]), inline=False)
-            summary_embed.add_field(name="Antagonist", value=f"{campaign_data['antagonist']['name']} - {campaign_data['antagonist']['motivation']}", inline=False)
-            summary_embed.add_field(name="Side Quests", value="\n".join(campaign_data["side_quests"]), inline=False)
-            summary_embed.add_field(name="Starting Scenario", value=campaign_data["starting_scenario"]["description"], inline=False)
-            summary_embed.add_field(name="Scene Narration", value=narration_response[:1024], inline=False)
+            # Process each player sequentially with dropdowns
+            from character_data import RACES, CLASSES
             
-            if len(narration_response) > 1024:
-                narration_parts = [narration_response[i:i+1024] for i in range(1024, len(narration_response), 1024)]
-                for i, part in enumerate(narration_parts, 1):
-                    summary_embed.add_field(name=f"Scene Narration (Part {i+1})", value=part, inline=False)
+            race_mapping = {
+                "Human": "Human",
+                "Elf": "Elf (High Elf)",
+                "Dwarf": "Dwarf (Mountain Dwarf)",
+                "Halfling": "Halfling (Lightfoot)",
+                "Gnome": "Gnome (Rock)",
+                "Dragonborn": "Dragonborn",
+                "Tiefling": "Tiefling",
+                "Half-Elf": "Half-Elf",
+                "Half-Orc": "Half-Orc"
+            }
             
-            await ctx.send(embed=summary_embed)
+            for player_id in game["player_ids"]:
+                character = game["characters"][player_id]
+                race_key = race_mapping.get(character["race"].split()[0], character["race"])
+                if race_key not in RACES:
+                    await ctx.send(f"Error: Invalid race '{character['race']}' for <@{player_id}>.")
+                    continue
+                
+                race_data = RACES[race_key]
+                class_data = CLASSES[character["class"]]
+                
+                # Initial embed with options
+                intro_msg = (
+                    f"Hail, noble <@{player_id}>! Here lies the tale of your character, "
+                    f"a legend poised to shape the realm of {theme}!"
+                )
+                char_embed = discord.Embed(
+                    title=f"Character: {character['name']}",
+                    description=f"A {character['race']} {character['class']}",
+                    color=discord.Color.gold()
+                )
+                char_embed.add_field(name="Languages", value=", ".join(race_data["languages"]), inline=True)
+                char_embed.add_field(name="Inventory", value=", ".join(class_data["equipment"]), inline=True)
+                char_embed.add_field(name="Traits", value=", ".join(race_data["traits"]), inline=False)
+                char_embed.add_field(name="Class Features", value=", ".join(class_data["class_features"]), inline=False)
+                
+                ability_scores = (
+                    f"STR: {character.get('strength', '10')} | "
+                    f"DEX: {character.get('dexterity', '10')} | "
+                    f"CON: {character.get('constitution', '10')}\n"
+                    f"INT: {character.get('intelligence', '10')} | "
+                    f"WIS: {character.get('wisdom', '10')} | "
+                    f"CHA: {character.get('charisma', '10')}"
+                )
+                char_embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
+                
+                # Prepare dropdown view
+                view = SelectionView(player_id)
+                view.add_item(InventoryDropdown(class_data["equipment"]))
+                
+                if "skills" in class_data and class_data["skills"]["choose"] > 0:
+                    char_embed.add_field(
+                        name=f"Skills (Choose {class_data['skills']['choose']})",
+                        value=", ".join(class_data["skills"]["options"]),
+                        inline=False
+                    )
+                    view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
+                
+                elif "spells" in class_data:
+                    if "choose_cantrips" in class_data["spells"]:
+                        char_embed.add_field(
+                            name=f"Cantrips (Choose {class_data['spells']['choose_cantrips']})",
+                            value=", ".join(class_data["spells"]["cantrips"]),
+                            inline=False
+                        )
+                        view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
+                    if "choose_spells" in class_data["spells"]:
+                        char_embed.add_field(
+                            name=f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})",
+                            value=", ".join(class_data["spells"]["spells"]),
+                            inline=False
+                        )
+                        view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
+                
+                # Send initial embed with dropdowns
+                await ctx.send(intro_msg, embed=char_embed, view=view)
+                await view.wait()
+                
+                # Update embed with selections
+                if view.selected_inventory:
+                    char_embed.set_field_at(
+                        1,  # Inventory field index
+                        name="Inventory",
+                        value=", ".join(view.selected_inventory),
+                        inline=True
+                    )
+                    character["inventory"] = view.selected_inventory
+                
+                if view.selected_skills:
+                    char_embed.set_field_at(
+                        char_embed.fields.index(discord.EmbedField(name=f"Skills (Choose {class_data['skills']['choose']})")),
+                        name="Skills",
+                        value=", ".join(view.selected_skills),
+                        inline=False
+                    )
+                    character["skills"] = view.selected_skills
+                
+                if view.selected_cantrips or view.selected_spells:
+                    if view.selected_cantrips:
+                        cantrip_idx = char_embed.fields.index(discord.EmbedField(name=f"Cantrips (Choose {class_data['spells']['choose_cantrips']})"))
+                        char_embed.set_field_at(
+                            cantrip_idx,
+                            name="Cantrips",
+                            value=", ".join(view.selected_cantrips),
+                            inline=False
+                        )
+                        character["cantrips"] = view.selected_cantrips
+                    if view.selected_spells:
+                        spell_idx = char_embed.fields.index(discord.EmbedField(name=f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})"))
+                        char_embed.set_field_at(
+                            spell_idx,
+                            name="1st-Level Spells",
+                            value=", ".join(view.selected_spells),
+                            inline=False
+                        )
+                        character["spells"] = view.selected_spells
+                
+                # Update game data and send updated embed
+                game["characters"][player_id] = character
+                await self.save_game(channel_id, game)
+                await ctx.send(f"<@{player_id}>’s choices locked in!", embed=char_embed)
             
+            # Add to game history
             await self.add_to_game_history(channel_id, {
-                "event": "campaign_setup",
+                "event": "campaign_theme_set",
                 "theme": theme,
-                "campaign_name": campaign_data["name"],
                 "timestamp": datetime.now().isoformat()
             })
             
-            await ctx.send("The adventure begins! What would you like to do next?")
-            
         except asyncio.TimeoutError:
             await ctx.send("Campaign setup timed out. Please try again when you're ready.")
-    
+
     def cog_unload(self):
         if self.use_mongo:
             self.mongo_client.close()
