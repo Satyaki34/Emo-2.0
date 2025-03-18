@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import asyncio
@@ -22,7 +23,6 @@ class RaceDropdown(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()  # Acknowledge the interaction
         self.view.selected_race = self.values[0]
-        # Update the embed to confirm selection
         embed = interaction.message.embeds[0]
         embed.description = f"Race selected: **{self.values[0]}**"
         await interaction.message.edit(embed=embed, view=None)
@@ -46,7 +46,6 @@ class ClassDropdown(ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()  # Acknowledge the interaction
         self.view.selected_class = self.values[0]
-        # Update the embed to confirm selection
         embed = interaction.message.embeds[0]
         embed.description = f"Class selected: **{self.values[0]}**"
         await interaction.message.edit(embed=embed, view=None)
@@ -204,7 +203,7 @@ class CharacterCreation(commands.Cog):
         # Step 5: Alignment
         alignment_embed = discord.Embed(
             title="⚖️ Step 5/6: Alignment",
-            description="What’s your character’s alignment?\n**Example:** Lawful Good, Neutral Evil, etc.)*",
+            description="What’s your character’s alignment?\n**Example:** Lawful Good, Neutral Evil, etc.",
             color=discord.Color.blue()
         )
         alignment_embed.add_field(name="Instructions", value="Reply with the alignment below.", inline=False)
@@ -225,45 +224,51 @@ class CharacterCreation(commands.Cog):
         ability_scores = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"]
         scores_embed = discord.Embed(
             title="💪 Step 6/6: Ability Scores",
-            description="Enter your ability scores (3-18). Reply with one number per message in this order:\n" +
-                        "\n".join([f"**{score}**" for score in ability_scores]) +
-                        "\n*(Press Enter for 10 as default)*",
+            description="You have 18 points to assign to your abilities. Each ability starts at 10, and you can assign up to 7 points per ability.\n" +
+                        "You will be prompted for each ability one by one. Reply with the number of points to assign (0 to 7) for each.",
             color=discord.Color.blue()
         )
-        scores_embed.add_field(name="Instructions", value="Start replying with scores below.", inline=False)
+        scores_embed.add_field(name="Instructions", value="Wait for the prompts for each ability.", inline=False)
         await ctx.send(embed=scores_embed)
         
+        ability_values = {ability.lower(): 10 for ability in ability_scores}
+        remaining_points = 18
+        
         for ability in ability_scores:
+            ability_key = ability.lower()
+            if remaining_points == 0:
+                character_data[ability_key] = "10"
+                continue
             while True:
+                current_scores = "\n".join([f"{abl.capitalize()}: {ability_values[abl.lower()]}" for abl in ability_scores])
+                embed = discord.Embed(
+                    title=f"Assign points to {ability}",
+                    description=f"Current scores:\n{current_scores}\n\nRemaining points: {remaining_points}\n\nHow many points do you want to assign to {ability}? (0 to {min(7, remaining_points)})",
+                    color=discord.Color.blue()
+                )
+                await ctx.send(embed=embed)
                 try:
                     response = await self.bot.wait_for('message', check=check_response, timeout=60)
                     if response.content.lower() == "cancel":
                         await ctx.send("Character creation cancelled.")
                         return
-                    value = response.content.strip()
-                    if not value:
-                        character_data[ability.lower()] = "10"
-                        break
+                    points_str = response.content.strip()
                     try:
-                        score = int(value)
-                        if 3 <= score <= 18:
-                            character_data[ability.lower()] = str(score)
+                        points = int(points_str)
+                        if 0 <= points <= min(7, remaining_points):
+                            ability_values[ability_key] += points
+                            remaining_points -= points
+                            character_data[ability_key] = str(ability_values[ability_key])
                             break
                         else:
-                            await ctx.send(embed=discord.Embed(
-                                title="❌ Invalid Score",
-                                description=f"{ability} must be between 3 and 18. Try again.",
-                                color=discord.Color.red()
-                            ))
+                            await ctx.send(f"Invalid points. Must be between 0 and {min(7, remaining_points)}.")
                     except ValueError:
-                        await ctx.send(embed=discord.Embed(
-                            title="❌ Invalid Input",
-                            description="Please enter a valid number!!",
-                            color=discord.Color.red()
-                        ))
+                        await ctx.send("Please enter a valid number.")
                 except asyncio.TimeoutError:
-                    await ctx.send(f"Timed out waiting for {ability}. Character creation cancelled.")
+                    await ctx.send("Timed out. Character creation cancelled.")
                     return
+        if remaining_points > 0:
+            await ctx.send(f"You have {remaining_points} points left unassigned.")
         
         # Final confirmation
         confirm_embed = discord.Embed(
@@ -318,7 +323,7 @@ class CharacterCreation(commands.Cog):
         embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
         if author_name:
             embed.set_footer(text=f"Created by {author_name}")
-
+ 
     @commands.command(name="view_character")
     async def view_character(self, ctx, member: discord.Member = None):
         """View a character in the current D&D game
@@ -329,38 +334,31 @@ class CharacterCreation(commands.Cog):
             await ctx.send("Error: DnD game system is not currently available.")
             return
         
-        # If no member specified, show the caller's character
         if member is None:
             member = ctx.author
         
         channel_id = str(ctx.channel.id)
         user_id = str(member.id)
         
-        # Check if there's an active game in this channel
         game = await self.parent_cog.get_game(channel_id)
         if not game:
             await ctx.send("### There is no active D&D game in this channel.")
             return
         
-        # Check if characters exist in the game data
         if "characters" not in game or user_id not in game["characters"]:
             await ctx.send(f"### {member.display_name} doesn't have a character in this game.")
             return
         
-        # Get character data
         character = game["characters"][user_id]
         
-        # Create character embed
         character_embed = discord.Embed(
             title=f"Character: {character.get('name', 'Unknown')}",
             description=f"Player: {member.display_name}",
             color=discord.Color.blue()
         )
         
-        # Add character details using helper
         self._add_character_fields(character_embed, character, member.display_name)
         
-        # Add thumbnail
         image_key = f"{character['race']}_{character['class']}"
         image_url = self.character_images.get(image_key, self.default_image)
         character_embed.set_thumbnail(url=image_url)
@@ -379,25 +377,21 @@ class CharacterCreation(commands.Cog):
         
         channel_id = str(ctx.channel.id)
         
-        # Check if there's an active game in this channel
         game = await self.parent_cog.get_game(channel_id)
         if not game:
             await ctx.send("### There is no active D&D game in this channel.")
             return
         
-        # Check if characters exist in the game data
         if "characters" not in game or not game["characters"]:
             await ctx.send("### No characters have been created in this game yet.")
             return
         
-        # Create character list embed
         embed = discord.Embed(
             title="🎭 D&D Characters 🎭",
             description=f"Characters in this game:",
             color=discord.Color.purple()
         )
         
-        # Add each character to the list
         for user_id, character in game["characters"].items():
             player = self.bot.get_user(int(user_id))
             player_name = player.display_name if player else "Unknown Player"

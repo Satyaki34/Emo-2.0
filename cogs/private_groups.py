@@ -90,6 +90,7 @@ class CommandsDropdown(ui.Select):
         embed.add_field(name="!dnd", value="Setup a new D&D session.\nExample: `!dnd`", inline=False)
         embed.add_field(name="!dnd_status", value="Show current D&D status.\nExample: `!dnd_status`", inline=False)
         embed.add_field(name="!end_dnd", value="End current D&D game.\nExample: `!end_dnd`", inline=False)
+        embed.add_field(name="!campaign_setup", value="Set up the campaign theme and start the adventure.\nExample: `!campaign_setup`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         

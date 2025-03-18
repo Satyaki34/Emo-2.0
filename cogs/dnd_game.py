@@ -36,7 +36,7 @@ class SkillsDropdown(ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        self.view.selected_skills = self.values  # Store selection, but don’t stop the view
+        self.view.selected_skills = self.values  # Store selection, but don't stop the view
 
 class SpellsDropdown(ui.Select):
     def __init__(self, spell_type, options, choose_count):
@@ -56,16 +56,18 @@ class SpellsDropdown(ui.Select):
         if self.spell_type == "Cantrip":
             self.view.selected_cantrips = self.values
         else:
-            self.view.selected_spells = self.values  # Store selection, but don’t stop the view
+            self.view.selected_spells = self.values  # Store selection, but don't stop the view
 
 class SelectionView(ui.View):
-    def __init__(self, player_id, inventory_length, timeout=60):
+    def __init__(self, player_id, inventory_length, selection_type=None, choose_count=None, timeout=60):
         super().__init__(timeout=timeout)
         self.player_id = player_id
-        self.selected_inventory = [None] * inventory_length  # Pre-populate with None for "OR" pairs
+        self.selected_inventory = [None] * inventory_length if selection_type == "inventory" else None
         self.selected_skills = None
         self.selected_cantrips = None
         self.selected_spells = None
+        self.selection_type = selection_type
+        self.choose_count = choose_count if selection_type in ["skills", "cantrips", "spells"] else None
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         return interaction.user.id == int(self.player_id)
@@ -79,6 +81,21 @@ class ConfirmButton(ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
+        
+        # Validate selections based on selection_type
+        if self.view.selection_type == "inventory" and None in self.view.selected_inventory:
+            await interaction.followup.send("Please select one option from each equipment choice before confirming.", ephemeral=True)
+            return
+        elif self.view.selection_type == "skills" and (not self.view.selected_skills or len(self.view.selected_skills) < self.view.choose_count):
+            await interaction.followup.send(f"Please select {self.view.choose_count} skills before confirming.", ephemeral=True)
+            return
+        elif self.view.selection_type == "cantrips" and (not self.view.selected_cantrips or len(self.view.selected_cantrips) < self.view.choose_count):
+            await interaction.followup.send(f"Please select {self.view.choose_count} cantrips before confirming.", ephemeral=True)
+            return
+        elif self.view.selection_type == "spells" and (not self.view.selected_spells or len(self.view.selected_spells) < self.view.choose_count):
+            await interaction.followup.send(f"Please select {self.view.choose_count} spells before confirming.", ephemeral=True)
+            return
+        
         self.view.stop()
 
 class DnDGame(commands.Cog):
@@ -106,80 +123,6 @@ class DnDGame(commands.Cog):
                 self.active_games = {}
                 
         self.gemini_model = None
-        self.system_prompts = {  # Unchanged system_prompts
-            "campaign_creation": """
-            You are Emo, an AI Dungeon Master for a text-based D&D campaign.
-            Generate a rich, immersive campaign setting based on the theme provided.
-            Include:
-            - A compelling main plot (string)
-            - 3-5 key locations (list of strings)
-            - A main antagonist with clear motivations (object with 'name' and 'motivation' fields)
-            - 2-3 potential side quests (list of strings)
-            - A starting scenario to introduce players to the world (object with 'location' and 'description' fields)
-
-            Format your response **strictly as a JSON object** with these exact keys: 'main_plot', 'locations', 'antagonist', 'side_quests', 'starting_scenario'. 
-            Do not include any additional text, explanations, or markdown outside the JSON structure. Return only the raw JSON string.
-            Example:
-            {
-                "main_plot": "A dark force has unleashed a plague of undead upon the land.",
-                "locations": ["Ruined City", "Ancient Lab", "Zombie Lair"],
-                "antagonist": {"name": "Gragnor", "motivation": "To rule over the living and dead."},
-                "side_quests": ["Rescue trapped survivors", "Find the lost cure"],
-                "starting_scenario": {"location": "Abandoned Shop", "description": "You huddle inside as groans echo outside."}
-            }
-            """,
-            "narration": """
-            You are Emo, an AI Dungeon Master narrating a D&D campaign.
-            Create vivid, atmospheric descriptions of the current scene, incorporating:
-            - Visual details of the environment
-            - Ambient sounds and smells
-            - NPCs present and their immediate actions
-            - Potential interactions or points of interest
-            - Any immediate dangers or opportunities
-            
-            Keep your narration engaging but concise (2-3 paragraphs).
-            """,
-            "npc_interaction": """
-            You are Emo, an AI Dungeon Master roleplaying as the NPC {npc_name}.
-            {npc_name} is a {npc_description}.
-            
-            Respond to the player's interaction in character, considering:
-            - The NPC's personality and goals
-            - The current situation and location
-            - The NPC's relationship with the players
-            - Any relevant plot information the NPC might know
-            
-            Keep responses natural and conversational.
-            """,
-            "combat": """
-            You are Emo, an AI Dungeon Master managing a D&D combat encounter.
-            Current combat state:
-            {combat_state}
-            
-            Narrate the results of the most recent action, including:
-            - Description of the attack or action
-            - Result of any dice rolls
-            - Effects on targets
-            - Current battlefield conditions
-            - Any changes to the combat situation
-            
-            Then, prompt the next character in initiative order for their action.
-            """,
-            "dice_roll": """
-            You are Emo, an AI Dungeon Master interpreting a dice roll result.
-            
-            Roll: {roll_notation} = {roll_result}
-            Context: {roll_context}
-            
-            Describe the outcome of this roll in an engaging way, considering:
-            - How close it was to success/failure
-            - The difficulty of the task (DC if provided)
-            - Any consequences or effects that result
-            - How it advances the current scene
-            
-            Keep your description brief but vivid.
-            """
-        }
     
     async def setup_gemini_model(self):
         if not self.gemini_model:
@@ -193,7 +136,7 @@ class DnDGame(commands.Cog):
     async def get_gemini_response(self, system_prompt, user_prompt, history=None):
         await self.setup_gemini_model()
         if not self.gemini_model:
-            return "Sorry, my storytelling brain isn’t working right now. Check if GeminiChat is set up correctly!"
+            return "Sorry, my storytelling brain isn't working right now. Check if GeminiChat is set up correctly!"
         
         try:
             chat = self.gemini_model.start_chat(history=[])
@@ -412,7 +355,7 @@ class DnDGame(commands.Cog):
         
         embed = discord.Embed(
             title="📜 Campaign Theme Selection 📜",
-            description="Let’s set the tone for your adventure!",
+            description="Let's set the tone for your adventure!",
             color=discord.Color.dark_gold()
         )
         embed.add_field(
@@ -433,10 +376,8 @@ class DnDGame(commands.Cog):
             
             player_mentions = ", ".join(f"<@{player_id}>" for player_id in game["player_ids"])
             welcome_msg = (
-                f"Gather 'round, brave souls {player_mentions}! I, Emo, your trusty Game Master, "
-                f"welcome you to an epic saga woven in the tapestry of {theme}. Prepare your hearts "
-                f"and steel your spirits—our grand tale is about to unfold! When you're ready, brave "
-                f"travelers, use `!start` to embark on this wondrous journey."
+                f"Welcome, players {player_mentions}! I am Emo, your Game Master for this {theme} adventure. "
+                f"Prepare for an epic journey! Use `!start` to begin."
             )
             
             game["theme"] = theme
@@ -469,6 +410,10 @@ class DnDGame(commands.Cog):
                 
                 race_data = RACES[race_key]
                 class_data = CLASSES[character["class"]]
+        
+                character["languages"] = race_data["languages"]
+                character["traits"] = race_data["traits"]
+                character["class_features"] = class_data["class_features"]
                 
                 # Initial embed with fixed inventory
                 intro_msg = (
@@ -507,7 +452,7 @@ class DnDGame(commands.Cog):
                         value=", ".join(choosable_pairs) + "\n**Choose one from each**",
                         inline=False
                     )
-                    view = SelectionView(player_id, len(choosable_pairs))
+                    view = SelectionView(player_id, len(choosable_pairs), selection_type="inventory")
                     for i, pair in enumerate(choosable_pairs):
                         options = [opt.strip() for opt in pair.split(" OR ")]
                         view.add_item(InventoryDropdown(options, i))
@@ -554,7 +499,7 @@ class DnDGame(commands.Cog):
                         value=", ".join(class_data["skills"]["options"]),
                         inline=False
                     )
-                    view = SelectionView(player_id, 0)  # No inventory pairs for skills
+                    view = SelectionView(player_id, 0, selection_type="skills", choose_count=class_data["skills"]["choose"])
                     view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
                     view.add_item(ConfirmButton())  # Add confirmation button
                     await ctx.send(intro_msg, embed=char_embed, view=view)
@@ -580,7 +525,7 @@ class DnDGame(commands.Cog):
                             value=", ".join(class_data["spells"]["cantrips"]),
                             inline=False
                         )
-                        view = SelectionView(player_id, 0)
+                        view = SelectionView(player_id, 0, selection_type="cantrips", choose_count=class_data["spells"]["choose_cantrips"])
                         view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
                         view.add_item(ConfirmButton())  # Add confirmation button
                         await ctx.send(intro_msg, embed=char_embed, view=view)
@@ -604,7 +549,7 @@ class DnDGame(commands.Cog):
                             value=", ".join(class_data["spells"]["spells"]),
                             inline=False
                         )
-                        view = SelectionView(player_id, 0)
+                        view = SelectionView(player_id, 0, selection_type="spells", choose_count=class_data["spells"]["choose_spells"])
                         view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
                         view.add_item(ConfirmButton())  # Add confirmation button
                         await ctx.send(intro_msg, embed=char_embed, view=view)
