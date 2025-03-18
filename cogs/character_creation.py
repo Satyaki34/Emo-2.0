@@ -1,7 +1,7 @@
-
 import discord
 from discord.ext import commands
 import asyncio
+import random
 from discord import ui
 from datetime import datetime
 from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE
@@ -66,6 +66,26 @@ class CharacterCreation(commands.Cog):
         self.parent_cog = None
         self.character_images = CHARACTER_IMAGES
         self.default_image = DEFAULT_IMAGE
+        
+        # Add these lists for random character data
+        self.names = [
+            "Aelar", "Bryn", "Cora", "Dren", "Elara", "Finn", "Gorrim", "Halia",
+            "Ilyana", "Jorik", "Kael", "Liora", "Mira", "Nero", "Oren", "Prynn"
+        ]
+
+        self.backstories = [
+            "Raised by wolves in the wild forest.",
+            "Orphaned and trained by a secretive guild.",
+            "A noble's child who ran away from home.",
+            "Survived a shipwreck and washed ashore.",
+            "Born during a rare celestial event."
+        ]
+
+        self.alignments = [
+            "Lawful Good", "Neutral Good", "Chaotic Good",
+            "Lawful Neutral", "True Neutral", "Chaotic Neutral",
+            "Lawful Evil", "Neutral Evil", "Chaotic Evil"
+        ]
     
     async def cog_load(self):
         self.parent_cog = self.bot.get_cog("DnDGame")
@@ -119,7 +139,7 @@ class CharacterCreation(commands.Cog):
         character_data = {"level": "1", "created_at": datetime.now().isoformat()}
         intro_embed = discord.Embed(
             title="✨ Character Creation ✨",
-            description="Let’s craft your D&D legend step-by-step! Answer each prompt below.\nType `cancel` at any text step to stop.",
+            description="Let's craft your D&D legend step-by-step! Answer each prompt below.\nType `cancel` at any text step to stop.",
             color=discord.Color.blue()
         )
         intro_embed.set_footer(text=f"For {ctx.author.display_name}")
@@ -131,7 +151,7 @@ class CharacterCreation(commands.Cog):
         # Step 1: Name
         name_embed = discord.Embed(
             title="🗡️ Step 1/6: Character Name",
-            description="What’s your character’s name?\n**Example:** Thorin",
+            description="What's your character's name?\n**Example:** Thorin",
             color=discord.Color.blue()
         )
         name_embed.add_field(name="Instructions", value="Reply with the name below.", inline=False)
@@ -153,7 +173,7 @@ class CharacterCreation(commands.Cog):
         # Step 2: Class
         class_embed = discord.Embed(
             title="⚒️ Step 2/6: Character Class",
-            description="What’s your character’s class?",
+            description="What's your character's class?",
             color=discord.Color.blue()
         )
         class_view = SelectionView()
@@ -168,7 +188,7 @@ class CharacterCreation(commands.Cog):
         # Step 3: Race
         race_embed = discord.Embed(
             title="🌍 Step 3/6: Character Race",
-            description="What’s your character’s race?",
+            description="What's your character's race?",
             color=discord.Color.blue()
         )
         race_view = SelectionView()
@@ -183,7 +203,7 @@ class CharacterCreation(commands.Cog):
         # Step 4: Backstory
         backstory_embed = discord.Embed(
             title="📜 Step 4/6: Backstory",
-            description="What’s your character’s backstory?\n**Example:** Raised in the mountains after a dragon attack, Abandoned as a sacrifice to ancient forest spirits and raised by them to become their vengeful champion, etc.",
+            description="What's your character's backstory?\n**Example:** Raised in the mountains after a dragon attack, Abandoned as a sacrifice to ancient forest spirits and raised by them to become their vengeful champion, etc.",
             color=discord.Color.blue()
         )
         backstory_embed.add_field(name="Instructions", value="Reply with the backstory below.", inline=False)
@@ -203,7 +223,7 @@ class CharacterCreation(commands.Cog):
         # Step 5: Alignment
         alignment_embed = discord.Embed(
             title="⚖️ Step 5/6: Alignment",
-            description="What’s your character’s alignment?\n**Example:** Lawful Good, Neutral Evil, etc.",
+            description="What's your character's alignment?\n**Example:** Lawful Good, Neutral Evil, etc.",
             color=discord.Color.blue()
         )
         alignment_embed.add_field(name="Instructions", value="Reply with the alignment below.", inline=False)
@@ -273,7 +293,7 @@ class CharacterCreation(commands.Cog):
         # Final confirmation
         confirm_embed = discord.Embed(
             title="✅ Character Confirmation",
-            description="Here’s your character! Reply `yes` to save, `no` to cancel.",
+            description="Here's your character! Reply `yes` to save, `no` to cancel.",
             color=discord.Color.gold()
         )
         self._add_character_fields(confirm_embed, character_data, ctx.author.display_name)
@@ -408,6 +428,100 @@ class CharacterCreation(commands.Cog):
             )
         
         await ctx.send(embed=embed)
+    
+    @commands.command(name="random")
+    async def random_character(self, ctx):
+        """Generate a random D&D character and ask for confirmation
+        
+        Example: !random
+        """
+        if not self.parent_cog:
+            await ctx.send("Error: DnD game system is not currently available.")
+            return
+
+        channel_id = str(ctx.channel.id)
+        game = await self.parent_cog.get_game(channel_id)
+        if not game:
+            await ctx.send("There is no active D&D game in this channel. Use `!dnd` to create one first.")
+            return
+
+        user_id = str(ctx.author.id)
+        if user_id not in game["player_ids"]:
+            await ctx.send("You are not a player in this D&D game.")
+            return
+
+        if "characters" not in game:
+            game["characters"] = {}
+
+        # Generate random character
+        character_data = self.generate_random_character()
+
+        # Display character and ask for confirmation
+        await self.display_and_confirm(ctx, character_data, game, user_id)
+
+    def generate_random_character(self):
+        """Generate random character data"""
+        races = ["Human", "Elf", "Dwarf", "Halfling", "Gnome", "Dragonborn", "Tiefling", "Half-Elf", "Half-Orc"]
+        classes = ["Artificer", "Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"]
+        ability_scores = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+
+        character_data = {
+            "name": random.choice(self.names),
+            "class": random.choice(classes),
+            "race": random.choice(races),
+            "backstory": random.choice(self.backstories),
+            "alignment": random.choice(self.alignments),
+            "level": "1",
+            "skills": "Random skills based on class and race",  # Placeholder
+            "inventory": "Random inventory based on class and race",  # Placeholder
+            "spells": "Random spells based on class and race",  # Placeholder
+            "created_at": datetime.now().isoformat()
+        }
+
+        # Generate ability scores (4d6 drop lowest)
+        for ability in ability_scores:
+            rolls = [random.randint(1, 6) for _ in range(4)]
+            rolls.sort()
+            score = sum(rolls[1:])  # Drop the lowest roll
+            character_data[ability] = str(score)
+
+        return character_data
+
+    async def display_and_confirm(self, ctx, character_data, game, user_id):
+        """Display character and ask for confirmation"""
+        embed = discord.Embed(
+            title=f"🎲 Random Character: {character_data['name']}",
+            description="Here's your randomly generated character! Type `yes` to accept or `no` to reroll.",
+            color=discord.Color.gold()
+        )
+        self._add_character_fields(embed, character_data)
+        embed.add_field(name="Skills", value=character_data.get("skills", "None"), inline=False)
+        embed.add_field(name="Inventory", value=character_data.get("inventory", "None"), inline=False)
+        embed.add_field(name="Spells", value=character_data.get("spells", "None"), inline=False)
+        image_key = f"{character_data['race']}_{character_data['class']}"
+        image_url = self.character_images.get(image_key, self.default_image)
+        embed.set_thumbnail(url=image_url)
+        await ctx.send(embed=embed)
+
+        # Get the channel_id from the context
+        channel_id = str(ctx.channel.id)
+
+        def check_confirm(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]
+
+        try:
+            confirm = await self.bot.wait_for('message', check=check_confirm, timeout=60)
+            if confirm.content.lower() == "yes":
+                game["characters"][user_id] = character_data
+                game["last_updated"] = datetime.now().isoformat()
+                await self.parent_cog.save_game(channel_id, game)
+                await ctx.send(f"Character {character_data['name']} accepted and saved!")
+            else:
+                await ctx.send("Rerolling for a new character...")
+                new_character = self.generate_random_character()
+                await self.display_and_confirm(ctx, new_character, game, user_id)
+        except asyncio.TimeoutError:
+            await ctx.send("Confirmation timed out. Character creation cancelled.")
 
 async def setup(bot):
     await bot.add_cog(CharacterCreation(bot))
