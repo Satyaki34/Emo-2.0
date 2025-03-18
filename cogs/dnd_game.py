@@ -36,8 +36,7 @@ class SkillsDropdown(ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        self.view.selected_skills = self.values
-        self.view.stop()
+        self.view.selected_skills = self.values  # Store selection, but don’t stop the view
 
 class SpellsDropdown(ui.Select):
     def __init__(self, spell_type, options, choose_count):
@@ -57,8 +56,7 @@ class SpellsDropdown(ui.Select):
         if self.spell_type == "Cantrip":
             self.view.selected_cantrips = self.values
         else:
-            self.view.selected_spells = self.values
-        self.view.stop()
+            self.view.selected_spells = self.values  # Store selection, but don’t stop the view
 
 class SelectionView(ui.View):
     def __init__(self, player_id, inventory_length, timeout=60):
@@ -558,10 +556,10 @@ class DnDGame(commands.Cog):
                     )
                     view = SelectionView(player_id, 0)  # No inventory pairs for skills
                     view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
+                    view.add_item(ConfirmButton())  # Add confirmation button
                     await ctx.send(intro_msg, embed=char_embed, view=view)
                     await view.wait()
                     if view.selected_skills:
-                        # Find and update "Skills" field
                         for idx, field in enumerate(char_embed.fields):
                             if field.name == f"Skills (Choose {class_data['skills']['choose']})":
                                 char_embed.set_field_at(
@@ -575,7 +573,7 @@ class DnDGame(commands.Cog):
                     intro_msg = f"<@{player_id}>, your skills are set!"
                 
                 # Handle spells (if applicable)
-                elif "spells" in class_data:
+                if "spells" in class_data:
                     if "choose_cantrips" in class_data["spells"]:
                         char_embed.add_field(
                             name=f"Cantrips (Choose {class_data['spells']['choose_cantrips']})",
@@ -584,6 +582,7 @@ class DnDGame(commands.Cog):
                         )
                         view = SelectionView(player_id, 0)
                         view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
+                        view.add_item(ConfirmButton())  # Add confirmation button
                         await ctx.send(intro_msg, embed=char_embed, view=view)
                         await view.wait()
                         if view.selected_cantrips:
@@ -607,6 +606,7 @@ class DnDGame(commands.Cog):
                         )
                         view = SelectionView(player_id, 0)
                         view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
+                        view.add_item(ConfirmButton())  # Add confirmation button
                         await ctx.send(intro_msg, embed=char_embed, view=view)
                         await view.wait()
                         if view.selected_spells:
