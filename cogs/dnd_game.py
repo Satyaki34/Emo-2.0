@@ -1,4 +1,3 @@
-# cogs/dnd_game.py
 import discord
 from discord.ext import commands
 import asyncio
@@ -11,29 +10,18 @@ from datetime import datetime
 from discord import ui
 
 class InventoryDropdown(ui.Select):
-    def __init__(self, inventory_options):
-        # Parse inventory options into separate choices
-        self.choices = []
-        for option in inventory_options:
-            if " OR " in option:
-                sub_options = option.split(" OR ")
-                for sub in sub_options:
-                    self.choices.append(sub.strip())
-            else:
-                self.choices.append(option.strip())
-        
-        options = [discord.SelectOption(label=choice, value=choice) for choice in self.choices]
+    def __init__(self, options, index):
+        self.index = index
         super().__init__(
-            placeholder="Choose your inventory items...",
+            placeholder="Choose an item...",
             min_values=1,
-            max_values=len(self.choices),  # Allow selecting all unique items
-            options=options
+            max_values=1,
+            options=[discord.SelectOption(label=opt.strip(), value=opt.strip()) for opt in options]
         )
     
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        self.view.selected_inventory = self.values
-        self.view.stop()
+        self.view.selected_inventory[self.index] = self.values[0]
 
 class SkillsDropdown(ui.Select):
     def __init__(self, skill_options, choose_count):
@@ -73,10 +61,10 @@ class SpellsDropdown(ui.Select):
         self.view.stop()
 
 class SelectionView(ui.View):
-    def __init__(self, player_id, timeout=60):
+    def __init__(self, player_id, inventory_length, timeout=60):
         super().__init__(timeout=timeout)
         self.player_id = player_id
-        self.selected_inventory = None
+        self.selected_inventory = [None] * inventory_length  # Pre-populate with None for "OR" pairs
         self.selected_skills = None
         self.selected_cantrips = None
         self.selected_spells = None
@@ -87,18 +75,23 @@ class SelectionView(ui.View):
     async def on_timeout(self):
         self.stop()
 
+class ConfirmButton(ui.Button):
+    def __init__(self):
+        super().__init__(label="Confirm", style=discord.ButtonStyle.green)
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.view.stop()
+
 class DnDGame(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         
-        # Load environment variables
         load_dotenv()
         mongo_uri = os.getenv('MONGO_URI')
         
-        # Initialize MongoDB or fallback to in-memory storage
         if not mongo_uri:
             print("WARNING: MONGO_URI not found in .env file!")
-            print("DnD games will be stored in memory and lost on restart.")
             self.use_mongo = False
             self.active_games = {}
         else:
@@ -115,7 +108,7 @@ class DnDGame(commands.Cog):
                 self.active_games = {}
                 
         self.gemini_model = None
-        self.system_prompts = {
+        self.system_prompts = {  # Unchanged system_prompts
             "campaign_creation": """
             You are Emo, an AI Dungeon Master for a text-based D&D campaign.
             Generate a rich, immersive campaign setting based on the theme provided.
@@ -407,7 +400,6 @@ class DnDGame(commands.Cog):
             await ctx.send("Only the game creator or Game Master (DM) can set up the campaign.")
             return
         
-        # Check if all players have created characters
         missing_characters = []
         for player_id in game["player_ids"]:
             if player_id not in game.get("characters", {}):
@@ -420,7 +412,6 @@ class DnDGame(commands.Cog):
             await ctx.send(f"Please make your character first using `!creation`. Players without characters: {missing_str}")
             return
         
-        # Prompt for campaign theme
         embed = discord.Embed(
             title="📜 Campaign Theme Selection 📜",
             description="Let’s set the tone for your adventure!",
@@ -442,7 +433,6 @@ class DnDGame(commands.Cog):
                 await ctx.send("No theme provided. Campaign setup cancelled.")
                 return
             
-            # Prepare welcome message with player mentions
             player_mentions = ", ".join(f"<@{player_id}>" for player_id in game["player_ids"])
             welcome_msg = (
                 f"Gather 'round, brave souls {player_mentions}! I, Emo, your trusty Game Master, "
@@ -451,16 +441,13 @@ class DnDGame(commands.Cog):
                 f"travelers, use `!start` to embark on this wondrous journey."
             )
             
-            # Update game with theme and state
             game["theme"] = theme
             game["state"] = "active"
             game["last_updated"] = datetime.now().isoformat()
             await self.save_game(channel_id, game)
             
-            # Send welcome message
             await ctx.send(welcome_msg)
             
-            # Process each player sequentially with dropdowns
             from character_data import RACES, CLASSES
             
             race_mapping = {
@@ -485,7 +472,7 @@ class DnDGame(commands.Cog):
                 race_data = RACES[race_key]
                 class_data = CLASSES[character["class"]]
                 
-                # Initial embed with options
+                # Initial embed with fixed inventory
                 intro_msg = (
                     f"Hail, noble <@{player_id}>! Here lies the tale of your character, "
                     f"a legend poised to shape the realm of {theme}!"
@@ -496,7 +483,12 @@ class DnDGame(commands.Cog):
                     color=discord.Color.gold()
                 )
                 char_embed.add_field(name="Languages", value=", ".join(race_data["languages"]), inline=True)
-                char_embed.add_field(name="Inventory", value=", ".join(class_data["equipment"]), inline=True)
+                
+                # Split inventory into fixed and choosable
+                inventory_options = class_data["equipment"]
+                fixed_items = [item.strip() for item in inventory_options if " OR " not in item]
+                choosable_pairs = [item.strip() for item in inventory_options if " OR " in item]
+                char_embed.add_field(name="Inventory", value=", ".join(fixed_items) or "None yet", inline=True)
                 char_embed.add_field(name="Traits", value=", ".join(race_data["traits"]), inline=False)
                 char_embed.add_field(name="Class Features", value=", ".join(class_data["class_features"]), inline=False)
                 
@@ -510,18 +502,79 @@ class DnDGame(commands.Cog):
                 )
                 char_embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
                 
-                # Prepare dropdown view
-                view = SelectionView(player_id)
-                view.add_item(InventoryDropdown(class_data["equipment"]))
+                # Handle choosable inventory
+                if choosable_pairs:
+                    char_embed.add_field(
+                        name="Choosable Equipment",
+                        value=", ".join(choosable_pairs) + "\n**Choose one from each**",
+                        inline=False
+                    )
+                    view = SelectionView(player_id, len(choosable_pairs))
+                    for i, pair in enumerate(choosable_pairs):
+                        options = [opt.strip() for opt in pair.split(" OR ")]
+                        view.add_item(InventoryDropdown(options, i))
+                    view.add_item(ConfirmButton())
+                    await ctx.send(intro_msg, embed=char_embed, view=view)
+                    await view.wait()
+                    selected_inventory = fixed_items.copy()
+                    chosen_items = []
+                    for i, pair in enumerate(choosable_pairs):
+                        options = [opt.strip() for opt in pair.split(" OR ")]
+                        chosen = view.selected_inventory[i]
+                        if chosen is None:
+                            chosen = options[0]
+                        chosen_items.append(chosen)
+                        selected_inventory.append(chosen)
+                    character["inventory"] = selected_inventory
+                    for idx, field in enumerate(char_embed.fields):
+                        if field.name == "Inventory":
+                            char_embed.set_field_at(
+                                idx,
+                                name="Inventory",
+                                value=", ".join(selected_inventory),
+                                inline=True
+                            )
+                            break
+                    for idx, field in enumerate(char_embed.fields):
+                        if field.name == "Choosable Equipment":
+                            char_embed.remove_field(idx)
+                            break
+                    char_embed.add_field(
+                        name="Chosen Equipment",
+                        value="Your chosen items are locked: " + ", ".join(chosen_items),
+                        inline=False
+                    )
+                    intro_msg = f"<@{player_id}>, your inventory is set!"
+                    await ctx.send(intro_msg, embed=char_embed)
+                else:
+                    character["inventory"] = fixed_items
                 
+                # Handle skills
                 if "skills" in class_data and class_data["skills"]["choose"] > 0:
                     char_embed.add_field(
                         name=f"Skills (Choose {class_data['skills']['choose']})",
                         value=", ".join(class_data["skills"]["options"]),
                         inline=False
                     )
+                    view = SelectionView(player_id, 0)  # No inventory pairs for skills
                     view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
+                    await ctx.send(intro_msg, embed=char_embed, view=view)
+                    await view.wait()
+                    if view.selected_skills:
+                        # Find and update "Skills" field
+                        for idx, field in enumerate(char_embed.fields):
+                            if field.name == f"Skills (Choose {class_data['skills']['choose']})":
+                                char_embed.set_field_at(
+                                    idx,
+                                    name="Skills",
+                                    value=", ".join(view.selected_skills),
+                                    inline=False
+                                )
+                                break
+                        character["skills"] = view.selected_skills
+                    intro_msg = f"<@{player_id}>, your skills are set!"
                 
+                # Handle spells (if applicable)
                 elif "spells" in class_data:
                     if "choose_cantrips" in class_data["spells"]:
                         char_embed.add_field(
@@ -529,64 +582,50 @@ class DnDGame(commands.Cog):
                             value=", ".join(class_data["spells"]["cantrips"]),
                             inline=False
                         )
+                        view = SelectionView(player_id, 0)
                         view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
+                        await ctx.send(intro_msg, embed=char_embed, view=view)
+                        await view.wait()
+                        if view.selected_cantrips:
+                            for idx, field in enumerate(char_embed.fields):
+                                if field.name == f"Cantrips (Choose {class_data['spells']['choose_cantrips']})":
+                                    char_embed.set_field_at(
+                                        idx,
+                                        name="Cantrips",
+                                        value=", ".join(view.selected_cantrips),
+                                        inline=False
+                                    )
+                                    break
+                            character["cantrips"] = view.selected_cantrips
+                        intro_msg = f"<@{player_id}>, your cantrips are set!"
+                    
                     if "choose_spells" in class_data["spells"]:
                         char_embed.add_field(
                             name=f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})",
                             value=", ".join(class_data["spells"]["spells"]),
                             inline=False
                         )
+                        view = SelectionView(player_id, 0)
                         view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
+                        await ctx.send(intro_msg, embed=char_embed, view=view)
+                        await view.wait()
+                        if view.selected_spells:
+                            for idx, field in enumerate(char_embed.fields):
+                                if field.name == f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})":
+                                    char_embed.set_field_at(
+                                        idx,
+                                        name="1st-Level Spells",
+                                        value=", ".join(view.selected_spells),
+                                        inline=False
+                                    )
+                                    break
+                            character["spells"] = view.selected_spells
+                        intro_msg = f"<@{player_id}>, your spells are set!"
                 
-                # Send initial embed with dropdowns
-                await ctx.send(intro_msg, embed=char_embed, view=view)
-                await view.wait()
-                
-                # Update embed with selections
-                if view.selected_inventory:
-                    char_embed.set_field_at(
-                        1,  # Inventory field index
-                        name="Inventory",
-                        value=", ".join(view.selected_inventory),
-                        inline=True
-                    )
-                    character["inventory"] = view.selected_inventory
-                
-                if view.selected_skills:
-                    char_embed.set_field_at(
-                        char_embed.fields.index(discord.EmbedField(name=f"Skills (Choose {class_data['skills']['choose']})")),
-                        name="Skills",
-                        value=", ".join(view.selected_skills),
-                        inline=False
-                    )
-                    character["skills"] = view.selected_skills
-                
-                if view.selected_cantrips or view.selected_spells:
-                    if view.selected_cantrips:
-                        cantrip_idx = char_embed.fields.index(discord.EmbedField(name=f"Cantrips (Choose {class_data['spells']['choose_cantrips']})"))
-                        char_embed.set_field_at(
-                            cantrip_idx,
-                            name="Cantrips",
-                            value=", ".join(view.selected_cantrips),
-                            inline=False
-                        )
-                        character["cantrips"] = view.selected_cantrips
-                    if view.selected_spells:
-                        spell_idx = char_embed.fields.index(discord.EmbedField(name=f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})"))
-                        char_embed.set_field_at(
-                            spell_idx,
-                            name="1st-Level Spells",
-                            value=", ".join(view.selected_spells),
-                            inline=False
-                        )
-                        character["spells"] = view.selected_spells
-                
-                # Update game data and send updated embed
                 game["characters"][player_id] = character
                 await self.save_game(channel_id, game)
-                await ctx.send(f"<@{player_id}>’s choices locked in!", embed=char_embed)
+                await ctx.send(intro_msg, embed=char_embed)
             
-            # Add to game history
             await self.add_to_game_history(channel_id, {
                 "event": "campaign_theme_set",
                 "theme": theme,
