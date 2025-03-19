@@ -87,6 +87,13 @@ class CharacterCreation(commands.Cog):
             "Lawful Evil", "Neutral Evil", "Chaotic Evil"
         ]
     
+    def normalize_race(self, race):
+        """Normalize race names to match character_images.py keys"""
+        if "-" in race:
+            parts = race.split("-")
+            return "-".join([parts[0], parts[1].lower()])
+        return race
+    
     async def cog_load(self):
         self.parent_cog = self.bot.get_cog("DnDGame")
         if not self.parent_cog:
@@ -498,7 +505,8 @@ class CharacterCreation(commands.Cog):
         embed.add_field(name="Skills", value=character_data.get("skills", "None"), inline=False)
         embed.add_field(name="Inventory", value=character_data.get("inventory", "None"), inline=False)
         embed.add_field(name="Spells", value=character_data.get("spells", "None"), inline=False)
-        image_key = f"{character_data['race']}_{character_data['class']}"
+        normalized_race = self.normalize_race(character_data['race'])
+        image_key = f"{normalized_race}_{character_data['class']}"
         image_url = self.character_images.get(image_key, self.default_image)
         embed.set_thumbnail(url=image_url)
         await ctx.send(embed=embed)
