@@ -150,10 +150,10 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         intro_embed.set_footer(text=f"For {ctx.author.display_name}")
-        await ctx.send(embed=intro_embed)
+        await ctx.author.send(embed=intro_embed)
         
         def check_response(m):
-            return m.author == ctx.author and m.channel == ctx.channel
+            return m.author == ctx.author and isinstance(m.channel, discord.DMChannel)
         
         # Step 1: Name
         name_embed = discord.Embed(
@@ -162,19 +162,19 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         name_embed.add_field(name="Instructions", value="Reply with the name below.", inline=False)
-        await ctx.send(embed=name_embed)
+        await ctx.author.send(embed=name_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
-                await ctx.send("Character creation cancelled.")
+                await ctx.author.send("Character creation cancelled.")
                 return
             name = response.content.strip()
             if not name:
-                await ctx.send("Name is required. Character creation cancelled.")
+                await ctx.author.send("Name is required. Character creation cancelled.")
                 return
             character_data["name"] = name
         except asyncio.TimeoutError:
-            await ctx.send("Timed out waiting for name. Character creation cancelled.")
+            await ctx.author.send("Timed out waiting for name. Character creation cancelled.")
             return
         
         # Step 2: Class
@@ -185,7 +185,7 @@ class CharacterCreation(commands.Cog):
         )
         class_view = SelectionView()
         class_view.add_item(ClassDropdown())
-        class_msg = await ctx.send(embed=class_embed, view=class_view)
+        class_msg = await ctx.author.send(embed=class_embed, view=class_view)
         await class_view.wait()
         if not class_view.selected_class:
             await class_msg.edit(content="Timed out waiting for class selection. Character creation cancelled.", embed=None, view=None)
@@ -200,7 +200,7 @@ class CharacterCreation(commands.Cog):
         )
         race_view = SelectionView()
         race_view.add_item(RaceDropdown())
-        race_msg = await ctx.send(embed=race_embed, view=race_view)
+        race_msg = await ctx.author.send(embed=race_embed, view=race_view)
         await race_view.wait()
         if not race_view.selected_race:
             await race_msg.edit(content="Timed out waiting for race selection. Character creation cancelled.", embed=None, view=None)
@@ -214,17 +214,17 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         backstory_embed.add_field(name="Instructions", value="Reply with the backstory below.", inline=False)
-        await ctx.send(embed=backstory_embed)
+        await ctx.author.send(embed=backstory_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
-                await ctx.send("Character creation cancelled.")
+                await ctx.author.send("Character creation cancelled.")
                 return
             backstory = response.content.strip()
             if backstory:
                 character_data["backstory"] = backstory
         except asyncio.TimeoutError:
-            await ctx.send("Timed out waiting for backstory. Character creation cancelled.")
+            await ctx.author.send("Timed out waiting for backstory. Character creation cancelled.")
             return
         
         # Step 5: Alignment
@@ -234,17 +234,17 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         alignment_embed.add_field(name="Instructions", value="Reply with the alignment below.", inline=False)
-        await ctx.send(embed=alignment_embed)
+        await ctx.author.send(embed=alignment_embed)
         try:
             response = await self.bot.wait_for('message', check=check_response, timeout=60)
             if response.content.lower() == "cancel":
-                await ctx.send("Character creation cancelled.")
+                await ctx.author.send("Character creation cancelled.")
                 return
             alignment = response.content.strip()
             if alignment:
                 character_data["alignment"] = alignment
         except asyncio.TimeoutError:
-            await ctx.send("Timed out waiting for alignment. Character creation cancelled.")
+            await ctx.author.send("Timed out waiting for alignment. Character creation cancelled.")
             return
         
         # Step 6: Ability Scores
@@ -256,7 +256,7 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.blue()
         )
         scores_embed.add_field(name="Instructions", value="Wait for the prompts for each ability.", inline=False)
-        await ctx.send(embed=scores_embed)
+        await ctx.author.send(embed=scores_embed)
         
         ability_values = {ability.lower(): 10 for ability in ability_scores}
         remaining_points = 18
@@ -273,11 +273,11 @@ class CharacterCreation(commands.Cog):
                     description=f"Current scores:\n{current_scores}\n\nRemaining points: {remaining_points}\n\nHow many points do you want to assign to {ability}? (0 to {min(7, remaining_points)})",
                     color=discord.Color.blue()
                 )
-                await ctx.send(embed=embed)
+                await ctx.author.send(embed=embed)
                 try:
                     response = await self.bot.wait_for('message', check=check_response, timeout=60)
                     if response.content.lower() == "cancel":
-                        await ctx.send("Character creation cancelled.")
+                        await ctx.author.send("Character creation cancelled.")
                         return
                     points_str = response.content.strip()
                     try:
@@ -288,14 +288,14 @@ class CharacterCreation(commands.Cog):
                             character_data[ability_key] = str(ability_values[ability_key])
                             break
                         else:
-                            await ctx.send(f"Invalid points. Must be between 0 and {min(7, remaining_points)}.")
+                            await ctx.author.send(f"Invalid points. Must be between 0 and {min(7, remaining_points)}.")
                     except ValueError:
-                        await ctx.send("Please enter a valid number.")
+                        await ctx.author.send("Please enter a valid number.")
                 except asyncio.TimeoutError:
-                    await ctx.send("Timed out. Character creation cancelled.")
+                    await ctx.author.send("Timed out. Character creation cancelled.")
                     return
         if remaining_points > 0:
-            await ctx.send(f"You have {remaining_points} points left unassigned.")
+            await ctx.author.send(f"You have {remaining_points} points left unassigned.")
         
         # Final confirmation
         confirm_embed = discord.Embed(
@@ -304,15 +304,15 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.gold()
         )
         self._add_character_fields(confirm_embed, character_data, ctx.author.display_name)
-        await ctx.send(embed=confirm_embed)
+        await ctx.author.send(embed=confirm_embed)
         
         try:
             confirm = await self.bot.wait_for('message', check=check_response, timeout=60)
             if confirm.content.lower() != "yes":
-                await ctx.send("Character creation cancelled.")
+                await ctx.author.send("Character creation cancelled.")
                 return
         except asyncio.TimeoutError:
-            await ctx.send("Confirmation timed out. Character creation cancelled.")
+            await ctx.author.send("Confirmation timed out. Character creation cancelled.")
             return
         
         # Save character

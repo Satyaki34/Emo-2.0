@@ -270,9 +270,9 @@ class DnDGame(commands.Cog):
                 
                 await ctx.send(embed=success_embed)
                 if is_ai_gm:
-                    await ctx.send("Emo will be your Game Master! Use `!campaign_setup` to start creating your adventure.")
+                    await ctx.send("**Emo** will be your Game Master! Use `!campaign_setup` to start creating your adventure(Use `!creation` or `!random` to create/generate a character)")
                 else:
-                    await ctx.send(f"{gm_name} will be your Game Master! More D&D commands will be available soon.")
+                    await ctx.send(f"{gm_name} will be your Game Master! More **D&D commands** will be available soon.")
                 
             except ValueError:
                 await ctx.send("Please enter a valid number. Game setup cancelled.")
@@ -350,7 +350,7 @@ class DnDGame(commands.Cog):
         
         if missing_characters:
             missing_str = ", ".join(missing_characters)
-            await ctx.send(f"Please make your character first using `!creation`. Players without characters: {missing_str}")
+            await ctx.send(f"Please make your character first using `!creation` or `!random`. Players without characters: {missing_str}")
             return
         
         embed = discord.Embed(
