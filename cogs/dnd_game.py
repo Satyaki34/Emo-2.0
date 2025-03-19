@@ -270,7 +270,7 @@ class DnDGame(commands.Cog):
                 
                 await ctx.send(embed=success_embed)
                 if is_ai_gm:
-                    await ctx.send("**Emo** will be your Game Master! Use `!campaign_setup` to start creating your adventure(Use `!creation` or `!random` to create/generate a character)")
+                    await ctx.send("**Emo** will be your Game Master! Use `!campaign_setup` to start creating your adventure (Use `!creation` or `!random` to create/generate a character)")
                 else:
                     await ctx.send(f"{gm_name} will be your Game Master! More **D&D commands** will be available soon.")
                 
@@ -309,15 +309,59 @@ class DnDGame(commands.Cog):
     @commands.command(name="end_dnd")
     async def end_dnd(self, ctx):
         channel_id = str(ctx.channel.id)
-        game = await self.get_game(channel_id)
-        if not game:
-            await ctx.send("There is no active D&D game in this channel.")
-            return
-        if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
-            await ctx.send("Only the game creator or Game Master can end this game.")
-            return
-        await self.delete_game(channel_id)
-        await ctx.send("The D&D game has been ended. Thanks for playing!")
+        
+        if isinstance(ctx.channel, discord.Thread):
+            thread_id = channel_id
+            ic_channel_id = str(ctx.channel.parent_id)
+            
+            # Find the game where this thread is the OOC thread
+            game = None
+            for stored_game in (self.active_games.values() if not self.use_mongo else self.games_collection.find()):
+                if stored_game.get("ooc_thread_id") == thread_id and stored_game.get("ic_channel_id") == ic_channel_id:
+                    game = stored_game
+                    break
+            
+            if not game:
+                await ctx.send("No active D&D game found associated with this thread.")
+                return
+            
+            if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
+                await ctx.send("Only the game creator or Game Master can end this game.")
+                return
+            
+            # Delete the IC channel and OOC thread
+            guild = ctx.guild
+            if "ic_channel_id" in game:
+                ic_channel = guild.get_channel(int(game["ic_channel_id"]))
+                if ic_channel:
+                    await ic_channel.delete()
+                else:
+                    print(f"Warning: IC channel {game['ic_channel_id']} not found for deletion.")
+            
+            if "ooc_thread_id" in game:
+                ooc_thread = guild.get_channel_or_thread(int(game["ooc_thread_id"]))
+                if ooc_thread and ooc_thread != ctx.channel:
+                    await ooc_thread.delete()
+            
+            await self.delete_game(game["channel_id"])
+            await ctx.send("The D&D game has ended. The IC channel and OOC thread will be deleted. Thanks for playing!")
+        
+        else:
+            game = await self.get_game(channel_id)
+            if not game:
+                await ctx.send("There is no active D&D game in this channel.")
+                return
+            
+            if str(ctx.author.id) != game["created_by"] and str(ctx.author.id) != game["game_master_id"]:
+                await ctx.send("Only the game creator or Game Master can end this game.")
+                return
+            
+            if "ic_channel_id" in game or "ooc_thread_id" in game:
+                await ctx.send("This game has started. Please use `!end_dnd` in the OOC thread to end it.")
+                return
+            
+            await self.delete_game(channel_id)
+            await ctx.send("The D&D game has been ended before starting. Thanks for playing!")
     
     @commands.command(name="campaign_setup")
     async def campaign_setup(self, ctx):
@@ -377,8 +421,9 @@ class DnDGame(commands.Cog):
             player_mentions = ", ".join(f"<@{player_id}>" for player_id in game["player_ids"])
             welcome_msg = (
                 f"Welcome, players {player_mentions}! I am Emo, your Game Master for this {theme} adventure. "
-                f"Prepare for an epic journey! Use `!start` to begin."
+                f"Prepare for an epic journey!"
             )
+            followup_msg = "I’ve sent every player some special choices for their characters. Check them out!!"
             
             game["theme"] = theme
             game["state"] = "active"
@@ -386,6 +431,7 @@ class DnDGame(commands.Cog):
             await self.save_game(channel_id, game)
             
             await ctx.send(welcome_msg)
+            await ctx.send(followup_msg)
             
             from character_data import RACES, CLASSES
             
@@ -401,7 +447,14 @@ class DnDGame(commands.Cog):
                 "Half-Orc": "Half-Orc"
             }
             
+            completed_players = set()
+            
             for player_id in game["player_ids"]:
+                player = self.bot.get_user(int(player_id))
+                if not player:
+                    await ctx.send(f"Error: Could not find user <@{player_id}>.")
+                    continue
+                
                 character = game["characters"][player_id]
                 race_key = race_mapping.get(character["race"].split()[0], character["race"])
                 if race_key not in RACES:
@@ -417,8 +470,8 @@ class DnDGame(commands.Cog):
                 
                 # Initial embed with fixed inventory
                 intro_msg = (
-                    f"Hail, noble <@{player_id}>! Here lies the tale of your character, "
-                    f"a legend poised to shape the realm of {theme}!"
+                    f"Hail, noble adventurer! Here are some special choices for your character, "
+                    f"{character['name']}, to prepare for the {theme} adventure!"
                 )
                 char_embed = discord.Embed(
                     title=f"Character: {character['name']}",
@@ -457,7 +510,7 @@ class DnDGame(commands.Cog):
                         options = [opt.strip() for opt in pair.split(" OR ")]
                         view.add_item(InventoryDropdown(options, i))
                     view.add_item(ConfirmButton())
-                    await ctx.send(intro_msg, embed=char_embed, view=view)
+                    await player.send(intro_msg, embed=char_embed, view=view)
                     await view.wait()
                     selected_inventory = fixed_items.copy()
                     chosen_items = []
@@ -487,8 +540,8 @@ class DnDGame(commands.Cog):
                         value="Your chosen items are locked: " + ", ".join(chosen_items),
                         inline=False
                     )
-                    intro_msg = f"<@{player_id}>, your inventory is set!"
-                    await ctx.send(intro_msg, embed=char_embed)
+                    intro_msg = f"Your inventory for {character['name']} is set!"
+                    await player.send(intro_msg, embed=char_embed)
                 else:
                     character["inventory"] = fixed_items
                 
@@ -502,7 +555,7 @@ class DnDGame(commands.Cog):
                     view = SelectionView(player_id, 0, selection_type="skills", choose_count=class_data["skills"]["choose"])
                     view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
                     view.add_item(ConfirmButton())  # Add confirmation button
-                    await ctx.send(intro_msg, embed=char_embed, view=view)
+                    await player.send(intro_msg, embed=char_embed, view=view)
                     await view.wait()
                     if view.selected_skills:
                         for idx, field in enumerate(char_embed.fields):
@@ -515,7 +568,7 @@ class DnDGame(commands.Cog):
                                 )
                                 break
                         character["skills"] = view.selected_skills
-                    intro_msg = f"<@{player_id}>, your skills are set!"
+                    intro_msg = f"Your skills for {character['name']} are set!"
                 
                 # Handle spells (if applicable)
                 if "spells" in class_data:
@@ -528,7 +581,7 @@ class DnDGame(commands.Cog):
                         view = SelectionView(player_id, 0, selection_type="cantrips", choose_count=class_data["spells"]["choose_cantrips"])
                         view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
                         view.add_item(ConfirmButton())  # Add confirmation button
-                        await ctx.send(intro_msg, embed=char_embed, view=view)
+                        await player.send(intro_msg, embed=char_embed, view=view)
                         await view.wait()
                         if view.selected_cantrips:
                             for idx, field in enumerate(char_embed.fields):
@@ -541,7 +594,7 @@ class DnDGame(commands.Cog):
                                     )
                                     break
                             character["cantrips"] = view.selected_cantrips
-                        intro_msg = f"<@{player_id}>, your cantrips are set!"
+                        intro_msg = f"Your cantrips for {character['name']} are set!"
                     
                     if "choose_spells" in class_data["spells"]:
                         char_embed.add_field(
@@ -552,7 +605,7 @@ class DnDGame(commands.Cog):
                         view = SelectionView(player_id, 0, selection_type="spells", choose_count=class_data["spells"]["choose_spells"])
                         view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
                         view.add_item(ConfirmButton())  # Add confirmation button
-                        await ctx.send(intro_msg, embed=char_embed, view=view)
+                        await player.send(intro_msg, embed=char_embed, view=view)
                         await view.wait()
                         if view.selected_spells:
                             for idx, field in enumerate(char_embed.fields):
@@ -565,11 +618,16 @@ class DnDGame(commands.Cog):
                                     )
                                     break
                             character["spells"] = view.selected_spells
-                        intro_msg = f"<@{player_id}>, your spells are set!"
+                        intro_msg = f"Your spells for {character['name']} are set!"
                 
                 game["characters"][player_id] = character
                 await self.save_game(channel_id, game)
-                await ctx.send(intro_msg, embed=char_embed)
+                await player.send(intro_msg, embed=char_embed)
+                await ctx.send(f"Player <@{player_id}> completed the special choices for their character.")
+                completed_players.add(player_id)
+            
+            if len(completed_players) == len(game["player_ids"]):
+                await ctx.send("Now players use `!start` to begin this adventure!")
             
             await self.add_to_game_history(channel_id, {
                 "event": "campaign_theme_set",
@@ -579,6 +637,76 @@ class DnDGame(commands.Cog):
             
         except asyncio.TimeoutError:
             await ctx.send("Campaign setup timed out. Please try again when you're ready.")
+    
+    @commands.command(name="start")
+    async def start_game(self, ctx):
+        """Starts the D&D game by creating a private IC channel and OOC thread."""
+        channel_id = str(ctx.channel.id)
+        game = await self.get_game(channel_id)
+        
+        if not game:
+            await ctx.send("There is no active D&D game in this channel. Use `!dnd` to create one.")
+            return
+        
+        if not game["is_ai_gm"]:
+            await ctx.send("This command is only available for games with Emo as the Game Master.")
+            return
+        
+        if game["state"] != "active":
+            await ctx.send("The game hasn’t been fully set up yet. Complete the campaign setup with `!campaign_setup` first.")
+            return
+        
+        # Check if all players have completed their choices
+        for player_id in game["player_ids"]:
+            if player_id not in game["characters"]:
+                player = self.bot.get_user(int(player_id))
+                player_name = player.display_name if player else f"User {player_id}"
+                await ctx.send(f"Player {player_name} hasn’t created a character yet. Use `!creation` or `!random`.")
+                return
+        
+        # Create permission overwrites
+        guild = ctx.guild
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_messages=True),
+        }
+        for player_id in game["player_ids"]:
+            player = guild.get_member(int(player_id))
+            if player:
+                overwrites[player] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        
+        # Create private IC channel
+        ic_channel = await guild.create_text_channel(
+            name="IC Chat (D&D)",
+            overwrites=overwrites,
+            topic=f"In-character chat for the {game['theme']} adventure!"
+        )
+        
+        # Create OOC thread
+        ooc_thread = await ic_channel.create_thread(
+            name="OOC Chat (D&D)",
+            type=discord.ChannelType.public_thread,
+            reason="Out-of-character chat for the D&D game"
+        )
+        
+        # Update game data
+        game["ic_channel_id"] = str(ic_channel.id)
+        game["ooc_thread_id"] = str(ooc_thread.id)
+        game["state"] = "started"
+        game["last_updated"] = datetime.now().isoformat()
+        await self.save_game(channel_id, game)
+        
+        # Notify in original channel and new IC channel
+        await ctx.send(f"The adventure begins! Join the private channel {ic_channel.mention} for in-character play. Use the thread {ooc_thread.mention} for out-of-character chat.")
+        await ic_channel.send(f"Welcome to the {game['theme']} adventure, brave heroes! Your journey starts here.")
+        await ooc_thread.send("This is the OOC thread for side chats and questions!")
+        
+        await self.add_to_game_history(channel_id, {
+            "event": "game_started",
+            "ic_channel_id": str(ic_channel.id),
+            "ooc_thread_id": str(ooc_thread.id),
+            "timestamp": datetime.now().isoformat()
+        })
 
     def cog_unload(self):
         if self.use_mongo:

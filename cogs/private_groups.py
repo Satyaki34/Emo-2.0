@@ -91,6 +91,7 @@ class CommandsDropdown(ui.Select):
         embed.add_field(name="!dnd_status", value="Show current D&D status.\nExample: `!dnd_status`", inline=False)
         embed.add_field(name="!end_dnd", value="End current D&D game.\nExample: `!end_dnd`", inline=False)
         embed.add_field(name="!campaign_setup", value="Set up the campaign theme and start the adventure.\nExample: `!campaign_setup`", inline=False)
+        embed.add_field(name="!start", value="Start the D&D game by creating private IC and OOC channels.\nExample: `!start`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         
@@ -104,6 +105,7 @@ class CommandsDropdown(ui.Select):
         embed.add_field(name="!creation", value="Create a new character for the current D&D game.\nExample: `!creation`", inline=False)
         embed.add_field(name="!view_character [@player]", value="View a character in the D&D game. If no player is specified, shows your character.\nExample: `!view_character @JohnDoe`", inline=False)
         embed.add_field(name="!list_characters", value="List all characters in the current D&D game.\nExample: `!list_characters`", inline=False)
+        embed.add_field(name="!random", value="Generate a random D&D character and ask for confirmation.\nExample: `!random`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
         

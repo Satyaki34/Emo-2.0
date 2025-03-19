@@ -327,7 +327,7 @@ class CharacterCreation(commands.Cog):
             color=discord.Color.green()
         )
         self._add_character_fields(success_embed, character_data)
-        image_key = f"{character_data['race']}_{character_data['class']}"
+        image_key = f"{self.normalize_race(character_data['race'])}_{character_data['class']}"
         image_url = self.character_images.get(image_key, self.default_image)
         success_embed.set_thumbnail(url=image_url)
         await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
@@ -460,11 +460,31 @@ class CharacterCreation(commands.Cog):
         if "characters" not in game:
             game["characters"] = {}
 
-        # Generate random character
-        character_data = self.generate_random_character()
+        # Check if character exists
+        if user_id in game["characters"]:
+            confirm_embed = discord.Embed(
+                title="⚔️ Replace Character?",
+                description=f"{ctx.author.mention}, you already have a character. Want to create a new one?",
+                color=discord.Color.gold()
+            )
+            confirm_embed.add_field(name="Reply", value="Type `yes` or `no`", inline=False)
+            confirm_msg = await ctx.send(embed=confirm_embed)
+            def check_confirm(m):
+                return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]
+            try:
+                confirm_response = await self.bot.wait_for('message', check=check_confirm, timeout=30)
+                if confirm_response.content.lower() != "yes":
+                    await ctx.send("Character creation cancelled.")
+                    return
+            except asyncio.TimeoutError:
+                await ctx.send("Timed out. Character creation cancelled.")
+                return
 
-        # Display character and ask for confirmation
-        await self.display_and_confirm(ctx, character_data, game, user_id)
+        # Generate and confirm character
+        while True:
+            character_data = self.generate_random_character()
+            if await self.display_and_confirm(ctx, character_data, game, user_id):
+                break
 
     def generate_random_character(self):
         """Generate random character data"""
@@ -495,41 +515,44 @@ class CharacterCreation(commands.Cog):
         return character_data
 
     async def display_and_confirm(self, ctx, character_data, game, user_id):
-        """Display character and ask for confirmation"""
+        """Display character and ask for confirmation via DM"""
         embed = discord.Embed(
             title=f"🎲 Random Character: {character_data['name']}",
-            description="Here's your randomly generated character! Type `yes` to accept or `no` to reroll.",
+            description="Here's your randomly generated character! Reply with `yes` to accept or `no` to reroll.",
             color=discord.Color.gold()
         )
         self._add_character_fields(embed, character_data)
-        embed.add_field(name="Skills", value=character_data.get("skills", "None"), inline=False)
-        embed.add_field(name="Inventory", value=character_data.get("inventory", "None"), inline=False)
-        embed.add_field(name="Spells", value=character_data.get("spells", "None"), inline=False)
         normalized_race = self.normalize_race(character_data['race'])
         image_key = f"{normalized_race}_{character_data['class']}"
         image_url = self.character_images.get(image_key, self.default_image)
         embed.set_thumbnail(url=image_url)
-        await ctx.send(embed=embed)
-
-        # Get the channel_id from the context
-        channel_id = str(ctx.channel.id)
+        await ctx.author.send(embed=embed)
 
         def check_confirm(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ["yes", "no"]
+            return m.author == ctx.author and m.channel == ctx.author.dm_channel and m.content.lower() in ["yes", "no"]
 
         try:
-            confirm = await self.bot.wait_for('message', check=check_confirm, timeout=60)
-            if confirm.content.lower() == "yes":
+            response = await self.bot.wait_for('message', timeout=60.0, check=check_confirm)
+            if response.content.lower() == "yes":
+                channel_id = str(ctx.channel.id)
                 game["characters"][user_id] = character_data
                 game["last_updated"] = datetime.now().isoformat()
                 await self.parent_cog.save_game(channel_id, game)
-                await ctx.send(f"Character {character_data['name']} accepted and saved!")
+                success_embed = discord.Embed(
+                    title=f"🎉 Character: {character_data.get('name', 'Unknown')}",
+                    description=f"Created by {ctx.author.display_name}",
+                    color=discord.Color.green()
+                )
+                self._add_character_fields(success_embed, character_data)
+                success_embed.set_thumbnail(url=image_url)
+                await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
+                return True
             else:
-                await ctx.send("Rerolling for a new character...")
-                new_character = self.generate_random_character()
-                await self.display_and_confirm(ctx, new_character, game, user_id)
+                await ctx.author.send("Generating a new character...")
+                return False
         except asyncio.TimeoutError:
-            await ctx.send("Confirmation timed out. Character creation cancelled.")
+            await ctx.author.send("Confirmation timed out. Character creation cancelled.")
+            return True  # Exit loop on timeout
 
 async def setup(bot):
     await bot.add_cog(CharacterCreation(bot))
