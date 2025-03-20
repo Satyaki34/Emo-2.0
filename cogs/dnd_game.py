@@ -468,7 +468,7 @@ class DnDGame(commands.Cog):
                 character["traits"] = race_data["traits"]
                 character["class_features"] = class_data["class_features"]
                 
-                # Initial embed with fixed inventory
+                # Initial embed with consolidated fields
                 intro_msg = (
                     f"Hail, noble adventurer! Here are some special choices for your character, "
                     f"{character['name']}, to prepare for the {theme} adventure!"
@@ -480,13 +480,9 @@ class DnDGame(commands.Cog):
                 )
                 char_embed.add_field(name="Languages", value=", ".join(race_data["languages"]), inline=True)
                 
-                # Split inventory into fixed and choosable
-                inventory_options = class_data["equipment"]
-                fixed_items = [item.strip() for item in inventory_options if " OR " not in item]
-                choosable_pairs = [item.strip() for item in inventory_options if " OR " in item]
-                char_embed.add_field(name="Inventory", value=", ".join(fixed_items) or "None yet", inline=True)
-                char_embed.add_field(name="Traits", value=", ".join(race_data["traits"]), inline=False)
-                char_embed.add_field(name="Class Features", value=", ".join(class_data["class_features"]), inline=False)
+                # Consolidate traits and class features
+                traits_and_features = f"**Traits:** {', '.join(race_data['traits'])}\n**Class Features:** {', '.join(class_data['class_features'])}"
+                char_embed.add_field(name="Traits & Features", value=traits_and_features, inline=False)
                 
                 ability_scores = (
                     f"STR: {character.get('strength', '10')} | "
@@ -497,6 +493,12 @@ class DnDGame(commands.Cog):
                     f"CHA: {character.get('charisma', '10')}"
                 )
                 char_embed.add_field(name="Ability Scores", value=ability_scores, inline=False)
+                
+                # Split inventory into fixed and choosable
+                inventory_options = class_data["equipment"]
+                fixed_items = [item.strip() for item in inventory_options if " OR " not in item]
+                choosable_pairs = [item.strip() for item in inventory_options if " OR " in item]
+                char_embed.add_field(name="Inventory", value=", ".join(fixed_items) or "None yet", inline=True)
                 
                 # Handle choosable inventory
                 if choosable_pairs:
@@ -545,80 +547,89 @@ class DnDGame(commands.Cog):
                 else:
                     character["inventory"] = fixed_items
                 
-                # Handle skills
+                # Handle skills in a new embed
                 if "skills" in class_data and class_data["skills"]["choose"] > 0:
-                    char_embed.add_field(
+                    skills_embed = discord.Embed(
+                        title=f"Skills for {character['name']}",
+                        description=f"Choose your skills for the {theme} adventure!",
+                        color=discord.Color.gold()
+                    )
+                    skills_embed.add_field(
                         name=f"Skills (Choose {class_data['skills']['choose']})",
                         value=", ".join(class_data["skills"]["options"]),
                         inline=False
                     )
                     view = SelectionView(player_id, 0, selection_type="skills", choose_count=class_data["skills"]["choose"])
                     view.add_item(SkillsDropdown(class_data["skills"]["options"], class_data["skills"]["choose"]))
-                    view.add_item(ConfirmButton())  # Add confirmation button
-                    await player.send(intro_msg, embed=char_embed, view=view)
+                    view.add_item(ConfirmButton())
+                    await player.send(intro_msg, embed=skills_embed, view=view)
                     await view.wait()
                     if view.selected_skills:
-                        for idx, field in enumerate(char_embed.fields):
-                            if field.name == f"Skills (Choose {class_data['skills']['choose']})":
-                                char_embed.set_field_at(
-                                    idx,
-                                    name="Skills",
-                                    value=", ".join(view.selected_skills),
-                                    inline=False
-                                )
-                                break
+                        skills_embed.set_field_at(
+                            0,
+                            name="Skills",
+                            value=", ".join(view.selected_skills),
+                            inline=False
+                        )
                         character["skills"] = view.selected_skills
                     intro_msg = f"Your skills for {character['name']} are set!"
+                    await player.send(intro_msg, embed=skills_embed)
                 
-                # Handle spells (if applicable)
+                # Handle spells in separate embeds
                 if "spells" in class_data:
                     if "choose_cantrips" in class_data["spells"]:
-                        char_embed.add_field(
+                        cantrips_embed = discord.Embed(
+                            title=f"Cantrips for {character['name']}",
+                            description=f"Choose your cantrips for the {theme} adventure!",
+                            color=discord.Color.gold()
+                        )
+                        cantrips_embed.add_field(
                             name=f"Cantrips (Choose {class_data['spells']['choose_cantrips']})",
                             value=", ".join(class_data["spells"]["cantrips"]),
                             inline=False
                         )
                         view = SelectionView(player_id, 0, selection_type="cantrips", choose_count=class_data["spells"]["choose_cantrips"])
                         view.add_item(SpellsDropdown("Cantrip", class_data["spells"]["cantrips"], class_data["spells"]["choose_cantrips"]))
-                        view.add_item(ConfirmButton())  # Add confirmation button
-                        await player.send(intro_msg, embed=char_embed, view=view)
+                        view.add_item(ConfirmButton())
+                        await player.send(intro_msg, embed=cantrips_embed, view=view)
                         await view.wait()
                         if view.selected_cantrips:
-                            for idx, field in enumerate(char_embed.fields):
-                                if field.name == f"Cantrips (Choose {class_data['spells']['choose_cantrips']})":
-                                    char_embed.set_field_at(
-                                        idx,
-                                        name="Cantrips",
-                                        value=", ".join(view.selected_cantrips),
-                                        inline=False
-                                    )
-                                    break
+                            cantrips_embed.set_field_at(
+                                0,
+                                name="Cantrips",
+                                value=", ".join(view.selected_cantrips),
+                                inline=False
+                            )
                             character["cantrips"] = view.selected_cantrips
                         intro_msg = f"Your cantrips for {character['name']} are set!"
+                        await player.send(intro_msg, embed=cantrips_embed)
                     
                     if "choose_spells" in class_data["spells"]:
-                        char_embed.add_field(
+                        spells_embed = discord.Embed(
+                            title=f"Spells for {character['name']}",
+                            description=f"Choose your spells for the {theme} adventure!",
+                            color=discord.Color.gold()
+                        )
+                        spells_embed.add_field(
                             name=f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})",
                             value=", ".join(class_data["spells"]["spells"]),
                             inline=False
                         )
                         view = SelectionView(player_id, 0, selection_type="spells", choose_count=class_data["spells"]["choose_spells"])
                         view.add_item(SpellsDropdown("Spell", class_data["spells"]["spells"], class_data["spells"]["choose_spells"]))
-                        view.add_item(ConfirmButton())  # Add confirmation button
-                        await player.send(intro_msg, embed=char_embed, view=view)
+                        view.add_item(ConfirmButton())
+                        await player.send(intro_msg, embed=spells_embed, view=view)
                         await view.wait()
                         if view.selected_spells:
-                            for idx, field in enumerate(char_embed.fields):
-                                if field.name == f"1st-Level Spells (Choose {class_data['spells']['choose_spells']})":
-                                    char_embed.set_field_at(
-                                        idx,
-                                        name="1st-Level Spells",
-                                        value=", ".join(view.selected_spells),
-                                        inline=False
-                                    )
-                                    break
+                            spells_embed.set_field_at(
+                                0,
+                                name="1st-Level Spells",
+                                value=", ".join(view.selected_spells),
+                                inline=False
+                            )
                             character["spells"] = view.selected_spells
                         intro_msg = f"Your spells for {character['name']} are set!"
+                        await player.send(intro_msg, embed=spells_embed)
                 
                 game["characters"][player_id] = character
                 await self.save_game(channel_id, game)
@@ -709,6 +720,78 @@ class DnDGame(commands.Cog):
             "ooc_thread_id": str(ooc_thread.id),
             "timestamp": datetime.now().isoformat()
         })
+    
+    @commands.command(name="profile")
+    async def show_profile(self, ctx):
+        """Display the user's character profile in the OOC thread"""
+        channel_id = str(ctx.channel.id)
+        parent_channel_id = str(ctx.channel.parent_id) if isinstance(ctx.channel, discord.Thread) else None
+        
+        # Find the game where this is the OOC thread or IC channel
+        game = None
+        for stored_game in (self.active_games.values() if not self.use_mongo else self.games_collection.find()):
+            if (stored_game.get("ooc_thread_id") == channel_id or
+                (parent_channel_id and stored_game.get("ic_channel_id") == parent_channel_id)):
+                game = stored_game
+                break
+        
+        if not game:
+            await ctx.send("There is no active D&D game associated with this channel or thread.")
+            return
+        
+        # Check if command is in OOC thread and game has started
+        if not (isinstance(ctx.channel, discord.Thread) and
+                game.get("ooc_thread_id") == channel_id and
+                game.get("state") == "started"):
+            await ctx.send("Use `!profile` in the OOC thread after the game has started with `!emo`.")
+            return
+        
+        user_id = str(ctx.author.id)
+        if user_id not in game.get("characters", {}):
+            await ctx.send("You don’t have a character in this game. Use `!creation` or `!random` to make one.")
+            return
+        
+        character = game["characters"][user_id]
+        
+        # Build the profile embed
+        embed = discord.Embed(
+            title=f"Name: {character.get('name', 'Unknown')}",
+            color=discord.Color.purple()
+        )
+        embed.set_thumbnail(url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        
+        embed.add_field(name="Class", value=character.get("class", "Unknown"), inline=True)
+        embed.add_field(name="Race", value=character.get("race", "Unknown"), inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)  # Spacer
+        
+        # HP with red bar (10 blocks, all filled for 100/100)
+        hp_bar = "█" * 10
+        embed.add_field(name="HP: 100/100", value=f"`[{hp_bar}]`", inline=True)
+        
+        # EXP with green bar (0/10, empty)
+        exp_bar = "█" * 0 + "░" * 10
+        embed.add_field(name="Exp: 0/10", value=f"`[{exp_bar}]`", inline=True)
+        
+        # Energy with blue bar (20/20, full)
+        energy_bar = "█" * 10
+        embed.add_field(name="Energy: 20/20", value=f"`[{energy_bar}]`", inline=True)
+        
+        embed.add_field(name="Level", value=f"• {character.get('level', '0')}", inline=True)
+        embed.add_field(name="Pet", value="• None", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)  # Spacer
+        
+        # Ability scores
+        abilities = (
+            f"**STR:** {character.get('strength', '10')} | "
+            f"**DEX:** {character.get('dexterity', '10')} | "
+            f"**CON:** {character.get('constitution', '10')}\n"
+            f"**INT:** {character.get('intelligence', '10')} | "
+            f"**WIS:** {character.get('wisdom', '10')} | "
+            f"**CHA:** {character.get('charisma', '10')}"
+        )
+        embed.add_field(name="Ability Stats", value=abilities, inline=False)
+        
+        await ctx.send(embed=embed)
 
     def cog_unload(self):
         if self.use_mongo:

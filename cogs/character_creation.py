@@ -331,6 +331,11 @@ class CharacterCreation(commands.Cog):
         image_url = self.character_images.get(image_key, self.default_image)
         success_embed.set_thumbnail(url=image_url)
         await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
+        
+        # Check if all players have characters
+        game = await self.parent_cog.get_game(channel_id)
+        if len(game["characters"]) == len(game["player_ids"]):
+            await ctx.send("As everyone made their character, now use `!campaign_setup` to set up the theme of your adventure!")
     
     def _add_character_fields(self, embed, character_data, author_name=None):
         """Helper to add character fields to an embed"""
@@ -391,6 +396,12 @@ class CharacterCreation(commands.Cog):
         character_embed.set_thumbnail(url=image_url)
         
         await ctx.send(embed=character_embed)
+        # Also send to OOC thread if game is active
+        ooc_channel_id = game.get("ooc_channel_id")
+        if ooc_channel_id:
+            ooc_channel = self.bot.get_channel(int(ooc_channel_id))
+            if ooc_channel and isinstance(ooc_channel, (discord.TextChannel, discord.Thread)):
+                await ooc_channel.send(embed=character_embed)
     
     @commands.command(name="list_characters")
     async def list_characters(self, ctx):
@@ -435,6 +446,12 @@ class CharacterCreation(commands.Cog):
             )
         
         await ctx.send(embed=embed)
+        # Also send to OOC thread if game is active
+        ooc_channel_id = game.get("ooc_channel_id")
+        if ooc_channel_id:
+            ooc_channel = self.bot.get_channel(int(ooc_channel_id))
+            if ooc_channel and isinstance(ooc_channel, (discord.TextChannel, discord.Thread)):
+                await ooc_channel.send(embed=embed)
     
     @commands.command(name="random")
     async def random_character(self, ctx):
@@ -546,6 +563,10 @@ class CharacterCreation(commands.Cog):
                 self._add_character_fields(success_embed, character_data)
                 success_embed.set_thumbnail(url=image_url)
                 await ctx.send(f"Character created successfully for {ctx.author.mention}!", embed=success_embed)
+                # Check if all players have characters
+                game = await self.parent_cog.get_game(channel_id)
+                if len(game["characters"]) == len(game["player_ids"]):
+                    await ctx.send("As everyone made their character, now use `!campaign_setup` to set up the theme of your adventure!")
                 return True
             else:
                 await ctx.author.send("Generating a new character...")

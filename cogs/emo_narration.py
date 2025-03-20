@@ -83,10 +83,10 @@ class EmoNarration(commands.Cog):
         # Generate narration
         system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines). Incorporate character details (race, class, spells, skills, traits, equipment) to make the story engaging."
         user_prompt = f"Begin a {theme} adventure for players {players} with characters: {'; '.join(character_details)}. Start the story now."
-        narration = await self.get_gemini_response(system_prompt, user_prompt, str(ctx.channel.id))
-
-        # Send narration
-        await ctx.send(narration)
+        async with ctx.typing():
+            narration = await self.get_gemini_response(system_prompt, user_prompt, str(ctx.channel.id))
+            # Send narration
+            await ctx.send(narration)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -126,10 +126,10 @@ class EmoNarration(commands.Cog):
             character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
         system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines). Incorporate character details (race, class, spells, skills, traits, equipment) to make the story engaging."
         user_prompt = f"Continue the {game['theme']} adventure with characters: {'; '.join(character_details)}. Player action: {message.content}"
-        narration = await self.get_gemini_response(system_prompt, user_prompt, str(message.channel.id))
-
-        # Send the next part of the story as a reply
-        await message.reply(narration)
+        async with message.channel.typing():
+            narration = await self.get_gemini_response(system_prompt, user_prompt, str(message.channel.id))
+            # Send the next part of the story as a reply
+            await message.reply(narration)
 
 async def setup(bot):
     await bot.add_cog(EmoNarration(bot))
