@@ -65,14 +65,24 @@ class EmoNarration(commands.Cog):
             await ctx.send("This command only works in the IC chat with Emo as GM!")
             return
 
-        # Get player info and theme
+        # Get player info, theme, and detailed character data
         players = ", ".join(game["players"])
         theme = game["theme"]
-        character_names = [game["characters"][pid]["name"] for pid in game["player_ids"]]
+        character_details = []
+        for pid in game["player_ids"]:
+            char = game["characters"][pid]
+            name = char.get("name", "Unknown")
+            race = char.get("race", "Unknown")
+            char_class = char.get("class", "Unknown")
+            spells = ", ".join(char.get("spells", [])) or "None"
+            skills = ", ".join(char.get("skills", [])) or "None"
+            traits = ", ".join(char.get("traits", [])) or "None"
+            equipment = ", ".join(char.get("equipment", [])) or "None"
+            character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
 
         # Generate narration
-        system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines)."
-        user_prompt = f"Begin a {theme} adventure for players {players} with characters {', '.join(character_names)}. Start the story now."
+        system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines). Incorporate character details (race, class, spells, skills, traits, equipment) to make the story engaging."
+        user_prompt = f"Begin a {theme} adventure for players {players} with characters: {'; '.join(character_details)}. Start the story now."
         narration = await self.get_gemini_response(system_prompt, user_prompt, str(ctx.channel.id))
 
         # Send narration
@@ -102,9 +112,20 @@ class EmoNarration(commands.Cog):
         if replied_msg.author != self.bot.user:
             return
 
-        # Continue the story based on player's reply
-        system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines)."
-        user_prompt = f"Continue the {game['theme']} adventure based on this player action: {message.content}"
+        # Continue the story based on player's reply with character details
+        character_details = []
+        for pid in game["player_ids"]:
+            char = game["characters"][pid]
+            name = char.get("name", "Unknown")
+            race = char.get("race", "Unknown")
+            char_class = char.get("class", "Unknown")
+            spells = ", ".join(char.get("spells", [])) or "None"
+            skills = ", ".join(char.get("skills", [])) or "None"
+            traits = ", ".join(char.get("traits", [])) or "None"
+            equipment = ", ".join(char.get("equipment", [])) or "None"
+            character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
+        system_prompt = "You are Emo, a friendly Game Master narrating a DnD adventure. Use simple words and keep responses short (up to 7 lines). Incorporate character details (race, class, spells, skills, traits, equipment) to make the story engaging."
+        user_prompt = f"Continue the {game['theme']} adventure with characters: {'; '.join(character_details)}. Player action: {message.content}"
         narration = await self.get_gemini_response(system_prompt, user_prompt, str(message.channel.id))
 
         # Send the next part of the story as a reply
