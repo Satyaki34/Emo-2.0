@@ -677,7 +677,7 @@ class DnDGame(commands.Cog):
         
         # Create private IC channel
         ic_channel = await guild.create_text_channel(
-            name="IC Chat (D&D)",
+            name="IC Chat dnd",
             overwrites=overwrites,
             topic=f"In-character chat for the {game['theme']} adventure!"
         )
@@ -699,6 +699,8 @@ class DnDGame(commands.Cog):
         # Notify in original channel and new IC channel
         await ctx.send(f"The adventure begins! Join the private channel {ic_channel.mention} for in-character play. Use the thread {ooc_thread.mention} for out-of-character chat.")
         await ic_channel.send(f"Welcome to the {game['theme']} adventure, brave heroes! Your journey starts here.")
+        await ic_channel.send("use '!emo' to give your game master take control over game in IC Chat")
+        await ic_channel.send("`Disclaimer: Only Use Ic Chat For In Game Conversation!!`")
         await ooc_thread.send("This is the OOC thread for side chats and questions!")
         
         await self.add_to_game_history(channel_id, {

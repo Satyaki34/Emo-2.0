@@ -70,7 +70,8 @@ async def on_ready():
         'cogs.private_groups',
         'cogs.gemini_chat',
         'cogs.dnd_game',
-        'cogs.character_creation'  # New character creation cog
+        'cogs.character_creation',  # New character creation cog
+        'cogs.emo_narration'        # Emo narration cog for !emo command
     ]
     
     for cog in cogs_to_load:
