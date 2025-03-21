@@ -19,7 +19,7 @@ class EmoNarration(commands.Cog):
     async def get_gemini_response(self, system_prompt, user_prompt, ic_channel_id):
         await self.setup_gemini_chat()
         if not self.gemini_chat or not hasattr(self.gemini_chat, 'model') or not self.gemini_chat.model:
-            return "Sorry, my storytelling brain isn't working! Check if GEMINI_API_KEY is set in .env."
+            return "Sorry, my narration brain isn't working! Check if GEMINI_API_KEY is set in .env."
         try:
             # Use existing history or start fresh
             if ic_channel_id not in self.game_histories:
@@ -45,7 +45,7 @@ class EmoNarration(commands.Cog):
             return narration
         except Exception as e:
             print(f"Error getting Gemini response: {e}")
-            return "Sorry, something went wrong while telling the story!"
+            return "Sorry, something went wrong with the narration!"
 
     @commands.command(name="emo")
     async def emo_narrate(self, ctx):
@@ -80,12 +80,11 @@ class EmoNarration(commands.Cog):
             equipment = ", ".join(char.get("equipment", [])) or "None"
             character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
 
-        # Generate narration with scene setting and dynamic storytelling
-        system_prompt = "You are Emo, a Dungeon Master narrating a DnD adventure like a storyteller. Start with a vivid scene (location, background, player actions). Build the story gradually with twists, responding to player choices (e.g., if a player claims something, call for a check like deception and bend the story). Sometimes advance the story without asking 'what do you do.' Avoid overusing suggestions like 'cast a spell.' Track split player paths if they diverge. Use simple words, keep responses short (up to 7 lines), and weave in character details (race, class, skills, traits, equipment) for engagement."
+        # Generate narration with simpler style
+        system_prompt = "You are Emo, a Dungeon Master for a DnD adventure. Narrate in third-person perspective (e.g., 'Mira tries to reach out'), using simple, clear language. Describe scenes and actions directly, explain dice rolls clearly (e.g., 'roll a d20 and add Persuasion bonus'), and weave in character details (race, class, skills, traits, equipment). Respond to player choices with checks when needed, and keep responses short (up to 7 lines)."
         user_prompt = f"Start a {theme} adventure for players {players} with characters: {'; '.join(character_details)}. Set the scene and begin the story."
         async with ctx.typing():
             narration = await self.get_gemini_response(system_prompt, user_prompt, str(ctx.channel.id))
-            # Send narration
             await ctx.send(narration)
 
     @commands.Cog.listener()
@@ -112,7 +111,7 @@ class EmoNarration(commands.Cog):
         if replied_msg.author != self.bot.user:
             return
 
-        # Continue the story with scene awareness and dynamic player paths
+        # Continue the story with simpler style
         character_details = []
         for pid in game["player_ids"]:
             char = game["characters"][pid]
@@ -124,11 +123,10 @@ class EmoNarration(commands.Cog):
             traits = ", ".join(char.get("traits", [])) or "None"
             equipment = ", ".join(char.get("equipment", [])) or "None"
             character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
-        system_prompt = "You are Emo, a Dungeon Master narrating a DnD adventure like a storyteller. Start with a vivid scene (location, background, player actions). Build the story gradually with twists, responding to player choices (e.g., if a player claims something, call for a check like deception and bend the story). Sometimes advance the story without asking 'what do you do.' Avoid overusing suggestions like 'cast a spell.' Track split player paths if they diverge. Use simple words, keep responses short (up to 7 lines), and weave in character details (race, class, skills, traits, equipment) for engagement."
+        system_prompt = "You are Emo, a Dungeon Master for a DnD adventure. Narrate in third-person perspective (e.g., 'Mira tries to reach out'), using simple, clear language. Describe scenes and actions directly, explain dice rolls clearly (e.g., 'roll a d20 and add Persuasion bonus'), and weave in character details (race, class, skills, traits, equipment). Respond to player choices with checks when needed, and keep responses short (up to 7 lines)."
         user_prompt = f"Continue the {game['theme']} adventure with characters: {'; '.join(character_details)}. Player action: {message.content}"
         async with message.channel.typing():
             narration = await self.get_gemini_response(system_prompt, user_prompt, str(message.channel.id))
-            # Send the next part of the story as a reply
             await message.reply(narration)
 
 async def setup(bot):
