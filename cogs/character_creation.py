@@ -373,8 +373,12 @@ class CharacterCreation(commands.Cog):
         user_id = str(member.id)
         
         game = await self.parent_cog.get_game(channel_id)
+        # If no game found and this is a thread, try the parent channel
+        if not game and isinstance(ctx.channel, discord.Thread):
+            parent_channel_id = str(ctx.channel.parent_id)
+            game = await self.parent_cog.get_game(parent_channel_id)
         if not game:
-            await ctx.send("### There is no active D&D game in this channel.")
+            await ctx.send("### There is no active D&D game associated with this channel or thread.")
             return
         
         if "characters" not in game or user_id not in game["characters"]:
@@ -416,8 +420,12 @@ class CharacterCreation(commands.Cog):
         channel_id = str(ctx.channel.id)
         
         game = await self.parent_cog.get_game(channel_id)
+        # If no game found and this is a thread, try the parent channel
+        if not game and isinstance(ctx.channel, discord.Thread):
+            parent_channel_id = str(ctx.channel.parent_id)
+            game = await self.parent_cog.get_game(parent_channel_id)
         if not game:
-            await ctx.send("### There is no active D&D game in this channel.")
+            await ctx.send("### There is no active D&D game associated with this channel or thread.")
             return
         
         if "characters" not in game or not game["characters"]:
@@ -516,9 +524,10 @@ class CharacterCreation(commands.Cog):
             "backstory": random.choice(self.backstories),
             "alignment": random.choice(self.alignments),
             "level": "1",
-            "skills": "Random skills based on class and race",  # Placeholder
-            "inventory": "Random inventory based on class and race",  # Placeholder
-            "spells": "Random spells based on class and race",  # Placeholder
+            "skills": [],
+            "inventory": [],
+            "spells": [],
+            "cantrips": [],
             "created_at": datetime.now().isoformat()
         }
 

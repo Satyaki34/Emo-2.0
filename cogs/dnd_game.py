@@ -753,43 +753,54 @@ class DnDGame(commands.Cog):
         
         character = game["characters"][user_id]
         
-        # Build the profile embed
+        # Build a gorgeous profile embed
         embed = discord.Embed(
-            title=f"Name: {character.get('name', 'Unknown')}",
-            color=discord.Color.purple()
+            title=f"✨ {character.get('name', 'Unknown')} ✨",
+            description=f"_{character.get('race', 'Unknown')} {character.get('class', 'Unknown')}_\n{character.get('backstory', 'A mysterious adventurer.')}",
+            color=discord.Color.gold()
         )
-        embed.set_thumbnail(url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
+        # Try character-specific image from character_creation, else fallback to avatar
+        from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE
+        image_key = f"{character.get('race', 'Unknown')}_{character.get('class', 'Unknown')}"
+        embed.set_thumbnail(url=CHARACTER_IMAGES.get(image_key, ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url))
         
-        embed.add_field(name="Class", value=character.get("class", "Unknown"), inline=True)
-        embed.add_field(name="Race", value=character.get("race", "Unknown"), inline=True)
-        embed.add_field(name="\u200b", value="\u200b", inline=False)  # Spacer
-        
-        # HP with red bar (10 blocks, all filled for 100/100)
+        # Core Stats
+        embed.add_field(name="⚔️ Level", value=f"• **{character.get('level', '01')}**", inline=True)
         hp_bar = "█" * 10
-        embed.add_field(name="HP: 100/100", value=f"`[{hp_bar}]`", inline=True)
-        
-        # EXP with green bar (0/10, empty)
+        embed.add_field(name="❤️ HP: 100/100", value=f"`[{hp_bar}]`", inline=True)
         exp_bar = "█" * 0 + "░" * 10
-        embed.add_field(name="Exp: 0/10", value=f"`[{exp_bar}]`", inline=True)
+        embed.add_field(name="🌟 Exp: 0/10", value=f"`[{exp_bar}]`", inline=True)
         
-        # Energy with blue bar (20/20, full)
-        energy_bar = "█" * 10
-        embed.add_field(name="Energy: 20/20", value=f"`[{energy_bar}]`", inline=True)
+        # Ability Scores
+        abilities = (
+            f"**STR:** {character.get('strength', '10')} | **DEX:** {character.get('dexterity', '10')} | **CON:** {character.get('constitution', '10')}\n"
+            f"**INT:** {character.get('intelligence', '10')} | **WIS:** {character.get('wisdom', '10')} | **CHA:** {character.get('charisma', '10')}"
+        )
+        embed.add_field(name="📊 Ability Scores", value=abilities, inline=False)
         
-        embed.add_field(name="Level", value=f"• {character.get('level', '0')}", inline=True)
-        embed.add_field(name="Pet", value="• None", inline=True)
+        # Additional Character Details
+        embed.add_field(name="🗣️ Languages", value=", ".join(character.get('languages', ['Common'])) or "Common", inline=True)
+        embed.add_field(name="🌍 Traits", value=", ".join(character.get('traits', ['None'])) or "None", inline=True)
         embed.add_field(name="\u200b", value="\u200b", inline=False)  # Spacer
         
-        # Ability scores
-        abilities = (
-            f"**STR:** {character.get('strength', '10')} | "
-            f"**DEX:** {character.get('dexterity', '10')} | "
-            f"**CON:** {character.get('constitution', '10')}\n"
-            f"**INT:** {character.get('intelligence', '10')} | "
-            f"**WIS:** {character.get('wisdom', '10')} | "
-            f"**CHA:** {character.get('charisma', '10')}"
+        # Inventory and Skills
+        inventory = character.get('inventory', ['None'])
+        embed.add_field(name="🎒 Inventory", value="\n".join(f"• {item}" for item in inventory) if inventory else "None", inline=True)
+        skills = character.get('skills', ['None'])
+        embed.add_field(name="🛠️ Skills", value="\n".join(f"• {skill}" for skill in skills) if skills else "None", inline=True)
+        
+        # Spells and Cantrips
+        cantrips = character.get('cantrips', ['None'])
+        embed.add_field(name="🔮 Cantrips", value=", ".join(cantrips) if cantrips else "None", inline=True)
+        spells = character.get('spells', ['None'])
+        embed.add_field(name="✨ Spells", value=", ".join(spells) if spells else "None", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=False)  # Spacer
+        
+        # Footer
+        embed.set_footer(
+            text=f"Player: {ctx.author.display_name} | Alignment: {character.get('alignment', 'Neutral')}",
+            icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url
         )
-        embed.add_field(name="Ability Stats", value=abilities, inline=False)
         
         await ctx.send(embed=embed)
 
