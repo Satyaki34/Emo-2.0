@@ -118,6 +118,8 @@ class CommandsDropdown(ui.Select):
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1083281523383480380/1349256619162341406/42ef8567-f4f1-4dc3-83ee-ed19a5d9a013-600x600.webp")
         embed.add_field(name="!test", value="Test bot functionality.\nExample: `!test`", inline=False)
         embed.add_field(name="!list", value="Show this command list.\nExample: `!list`", inline=False)
+        embed.add_field(name="!emo", value="Start a D&D adventure with Emo as GM.\nExample: `!emo`", inline=False)
+        embed.add_field(name="!profile", value="Show your D&D character profile in the OOC thread.\nExample: `!profile`", inline=False)
         embed.set_footer(text="Select another category from the dropdown menu")
         return embed
 
