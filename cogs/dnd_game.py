@@ -329,7 +329,8 @@ class DnDGame(commands.Cog):
                 await ctx.send("Only the game creator or Game Master can end this game.")
                 return
             
-            # Delete the IC channel and OOC thread
+            # Send confirmation first, then delete channels and game data
+            await ctx.send("The D&D game has ended. The IC channel and OOC thread will be deleted. Thanks for playing!")
             guild = ctx.guild
             if "ic_channel_id" in game:
                 ic_channel = guild.get_channel(int(game["ic_channel_id"]))
@@ -340,11 +341,10 @@ class DnDGame(commands.Cog):
             
             if "ooc_thread_id" in game:
                 ooc_thread = guild.get_channel_or_thread(int(game["ooc_thread_id"]))
-                if ooc_thread and ooc_thread != ctx.channel:
+                if ooc_thread:
                     await ooc_thread.delete()
             
             await self.delete_game(game["channel_id"])
-            await ctx.send("The D&D game has ended. The IC channel and OOC thread will be deleted. Thanks for playing!")
         
         else:
             game = await self.get_game(channel_id)
@@ -759,10 +759,12 @@ class DnDGame(commands.Cog):
             description=f"_{character.get('race', 'Unknown')} {character.get('class', 'Unknown')}_\n{character.get('backstory', 'A mysterious adventurer.')}",
             color=discord.Color.gold()
         )
-        # Try character-specific image from character_creation, else fallback to avatar
+        # Use character-specific image from character_creation, normalizing race
         from character_images import CHARACTER_IMAGES, DEFAULT_IMAGE
-        image_key = f"{character.get('race', 'Unknown')}_{character.get('class', 'Unknown')}"
-        embed.set_thumbnail(url=CHARACTER_IMAGES.get(image_key, ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url))
+        race = character.get('race', 'Unknown')
+        race = race if "-" not in race else "-".join([race.split("-")[0], race.split("-")[1].lower()])
+        image_key = f"{race}_{character.get('class', 'Unknown')}"
+        embed.set_thumbnail(url=CHARACTER_IMAGES.get(image_key, DEFAULT_IMAGE))
         
         # Core Stats
         embed.add_field(name="⚔️ Level", value=f"• **{character.get('level', '01')}**", inline=True)
