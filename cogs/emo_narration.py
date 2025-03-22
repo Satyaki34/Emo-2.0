@@ -717,73 +717,80 @@ Special tags (these won't appear in the final text):
 - If a dice roll is needed, include PENDING_ROLL: [character] must roll [dice] + [modifier] and explain why in everyday terms
 """
     
-        # Check pending actions for this character
+        # Check pending actions for this character with better error handling
         pending = self.pending_actions.get(ic_channel_id, {})
-        pending_for_char = pending.get(acting_char)
+        pending_for_char = pending.get(acting_char) if acting_char in pending else None
         narration = ""
     
-        if pending_for_char and message.content.strip().isdigit():
-            # Handle roll result
-            roll_result = int(message.content.strip())
-            user_prompt = f"Continue the {game['theme']} adventure for players {players} with characters: {'; '.join(character_details)}. {acting_char} rolled {roll_result} for {pending_for_char}."
-            async with message.channel.typing():
-                narration = await self.get_gemini_response(system_prompt, user_prompt, ic_channel_id)
-            del self.pending_actions[ic_channel_id][acting_char]
-            if not self.pending_actions[ic_channel_id]:
-                del self.pending_actions[ic_channel_id]
-            await self.save_pending_action(ic_channel_id, {})
-        else:
-            # Process new action
-            user_prompt = f"Continue the {game['theme']} adventure for players {players} with characters: {'; '.join(character_details)}. Player action by {acting_char}: {message.content}"
-            async with message.channel.typing():
-                narration = await self.get_gemini_response(system_prompt, user_prompt, ic_channel_id)
+        try:
+            if pending_for_char and message.content.strip().isdigit():
+                # Handle roll result
+                roll_result = int(message.content.strip())
+                user_prompt = f"Continue the {game['theme']} adventure for players {players} with characters: {'; '.join(character_details)}. {acting_char} rolled {roll_result} for {pending_for_char}."
+                async with message.channel.typing():
+                    narration = await self.get_gemini_response(system_prompt, user_prompt, ic_channel_id)
+                if acting_char in self.pending_actions.get(ic_channel_id, {}):
+                    del self.pending_actions[ic_channel_id][acting_char]
+                if ic_channel_id in self.pending_actions and not self.pending_actions[ic_channel_id]:
+                    del self.pending_actions[ic_channel_id]
+                await self.save_pending_action(ic_channel_id, {})
+            else:
+                # Process new action
+                user_prompt = f"Continue the {game['theme']} adventure for players {players} with characters: {'; '.join(character_details)}. Player action by {acting_char}: {message.content}"
+                async with message.channel.typing():
+                    narration = await self.get_gemini_response(system_prompt, user_prompt, ic_channel_id)
     
-        # Parse narration for HP and EXP changes
-        if dnd_game:
-            hp_match = re.search(r"(\w+) takes (\d+) damage", narration, re.IGNORECASE)
-            if hp_match:
-                char_name, damage = hp_match.groups()
-                if char_name == acting_char:
-                    await dnd_game.update_character_stats(ic_channel_id, player_id, -int(damage))
-                    narration += f"\n{acting_char}'s HP decreased by {damage}!"
+            # Parse narration for HP and EXP changes
+            if dnd_game:
+                hp_match = re.search(r"(\w+) takes (\d+) damage", narration, re.IGNORECASE)
+                if hp_match:
+                    char_name, damage = hp_match.groups()
+                    if char_name == acting_char:
+                        await dnd_game.update_character_stats(ic_channel_id, player_id, -int(damage))
+                        narration += f"\n{acting_char}'s HP decreased by {damage}!"
 
-            heal_match = re.search(r"(\w+) heals for (\d+)", narration, re.IGNORECASE)
-            if heal_match:
-                char_name, healing = heal_match.groups()
-                if char_name == acting_char:
-                    await dnd_game.update_character_stats(ic_channel_id, player_id, int(healing))
-                    narration += f"\n{acting_char}'s HP increased by {healing}!"
+                heal_match = re.search(r"(\w+) heals for (\d+)", narration, re.IGNORECASE)
+                if heal_match:
+                    char_name, healing = heal_match.groups()
+                    if char_name == acting_char:
+                        await dnd_game.update_character_stats(ic_channel_id, player_id, int(healing))
+                        narration += f"\n{acting_char}'s HP increased by {healing}!"
 
-            exp_match = re.search(r"(\w+) gains (\d+) EXP", narration, re.IGNORECASE)
-            if exp_match:
-                char_name, exp = exp_match.groups()
-                if char_name == acting_char:
-                    await dnd_game.award_exp(ic_channel_id, player_id, int(exp))
-                    narration += f"\n{acting_char} gained {exp} EXP!"
+                exp_match = re.search(r"(\w+) gains (\d+) EXP", narration, re.IGNORECASE)
+                if exp_match:
+                    char_name, exp = exp_match.groups()
+                    if char_name == acting_char:
+                        await dnd_game.award_exp(ic_channel_id, player_id, int(exp))
+                        narration += f"\n{acting_char} gained {exp} EXP!"
 
-        # Check for new pending rolls in narration
-        if "PENDING_ROLL:" in narration:
-            match = re.search(r"PENDING_ROLL: (\w+) must roll (.+)", narration)
-            if match:
-                char_name, roll = match.groups()
-                await self.save_pending_action(ic_channel_id, {char_name: f"roll {roll}"})
-                narration = narration.replace(match.group(0), f"{char_name}, please roll {roll} in your next reply.")
+            # Check for new pending rolls in narration
+            if "PENDING_ROLL:" in narration:
+                match = re.search(r"PENDING_ROLL: (\w+) must roll (.+)", narration)
+                if match:
+                    char_name, roll = match.groups()
+                    await self.save_pending_action(ic_channel_id, {char_name: f"roll {roll}"})
+                    narration = narration.replace(match.group(0), f"{char_name}, please roll {roll} in your next reply.")
 
-        # Add reminders for other pending actions
-        if self.pending_actions.get(ic_channel_id):
-            reminders = [f"{char}, your roll for {action} is still pending!"
-                        for char, action in self.pending_actions[ic_channel_id].items() if char != acting_char]
-            if reminders:
-                narration += "\n" + "\n".join(reminders)
+            # Add reminders for other pending actions
+            if ic_channel_id in self.pending_actions:
+                reminders = [f"{char}, your roll for {action} is still pending!"
+                            for char, action in self.pending_actions[ic_channel_id].items() if char != acting_char]
+                if reminders:
+                    narration += "\n" + "\n".join(reminders)
 
-        # Send narration as an embed
-        adventure_embed = discord.Embed(
-            title=f"🎭 {game['theme']} Adventure Continues",
-            description=narration,
-            color=0x1E90FF  # Dodger Blue
-        )
-        adventure_embed.set_footer(text="Reply to this message to interact with the world")
-        await message.reply(embed=adventure_embed)
+            # Send narration as an embed
+            adventure_embed = discord.Embed(
+                title=f"🎭 {game['theme']} Adventure Continues",
+                description=narration,
+                color=0x1E90FF  # Dodger Blue
+            )
+            adventure_embed.set_footer(text="Reply to this message to interact with the world")
+            await message.reply(embed=adventure_embed)
+
+        except Exception as e:
+            error_msg = f"An error occurred while processing your action: {str(e)}"
+            await message.reply(error_msg)
+            print(f"Error in on_message for character {acting_char}: {str(e)}")
 
 async def setup(bot):
     await bot.add_cog(EmoNarration(bot))
