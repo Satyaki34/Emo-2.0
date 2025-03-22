@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 from pymongo import MongoClient
 import os
+import os.path
 import random
 import json
 from dotenv import load_dotenv
@@ -146,7 +147,7 @@ class DnDGame(commands.Cog):
         except Exception as e:
             print(f"Error getting Gemini response: {e}")
             return "Sorry, I tripped over my own code. Try again!"
-
+    
     async def get_game(self, channel_id):
         if not self.use_mongo:
             return self.active_games.get(str(channel_id))
@@ -169,6 +170,33 @@ class DnDGame(commands.Cog):
                 del self.active_games[str(channel_id)]
         else:
             self.games_collection.delete_one({"channel_id": str(channel_id)})
+    
+    async def update_character_stats(self, channel_id, player_id, hp_change):
+        """Update a character's HP based on narration events."""
+        game = await self.get_game(channel_id)
+        if not game or player_id not in game["characters"]:
+            return
+        character = game["characters"][player_id]
+        character["hp"] = max(0, min(character.get("hp", 20) + hp_change, character["max_hp"]))
+        game["characters"][player_id] = character
+        await self.save_game(channel_id, game)
+    
+    async def award_exp(self, channel_id, player_id, exp_gain):
+        """Award EXP to a character and update level if threshold is met."""
+        game = await self.get_game(channel_id)
+        if not game or player_id not in game["characters"]:
+            return
+        character = game["characters"][player_id]
+        character["exp"] = character.get("exp", 0) + exp_gain
+        # Level up: 20 EXP per level (e.g., 20 for level 2, 40 for level 3)
+        current_level = character.get("level", 1)
+        exp_threshold = current_level * 20
+        while character["exp"] >= exp_threshold:
+            character["level"] = current_level + 1
+            current_level = character["level"]
+            exp_threshold = current_level * 20
+        game["characters"][player_id] = character
+        await self.save_game(channel_id, game)
     
     async def add_to_game_history(self, channel_id, entry):
         game = await self.get_game(channel_id)
@@ -329,8 +357,6 @@ class DnDGame(commands.Cog):
                 await ctx.send("Only the game creator or Game Master can end this game.")
                 return
             
-            # Send confirmation first, then delete channels and game data
-            await ctx.send("The D&D game has ended. The IC channel and OOC thread will be deleted. Thanks for playing!")
             guild = ctx.guild
             if "ic_channel_id" in game:
                 ic_channel = guild.get_channel(int(game["ic_channel_id"]))
@@ -345,6 +371,11 @@ class DnDGame(commands.Cog):
                     await ooc_thread.delete()
             
             await self.delete_game(game["channel_id"])
+            # Delete narration files
+            for file in ["data/narration/world_details.json", "data/narration/npc_database.json", "data/narration/scene_descriptions.json"]:
+                if os.path.exists(file):
+                    os.remove(file)
+            await ctx.send("The D&D game has ended. The IC channel, OOC thread, and narration files have been deleted. Thanks for playing!")
         
         else:
             game = await self.get_game(channel_id)
@@ -361,7 +392,11 @@ class DnDGame(commands.Cog):
                 return
             
             await self.delete_game(channel_id)
-            await ctx.send("The D&D game has been ended before starting. Thanks for playing!")
+            # Delete narration files
+            for file in ["data/narration/world_details.json", "data/narration/npc_database.json", "data/narration/scene_descriptions.json"]:
+                if os.path.exists(file):
+                    os.remove(file)
+            await ctx.send("The D&D game has been ended before starting. All narration files have been deleted. Thanks for playing!")
     
     @commands.command(name="campaign_setup")
     async def campaign_setup(self, ctx):
@@ -467,6 +502,11 @@ class DnDGame(commands.Cog):
                 character["languages"] = race_data["languages"]
                 character["traits"] = race_data["traits"]
                 character["class_features"] = class_data["class_features"]
+                # Initialize character stats
+                character["hp"] = 20
+                character["max_hp"] = 20
+                character["exp"] = 0
+                character["level"] = 1
                 
                 # Initial embed with consolidated fields
                 intro_msg = (
@@ -498,6 +538,7 @@ class DnDGame(commands.Cog):
                 inventory_options = class_data["equipment"]
                 fixed_items = [item.strip() for item in inventory_options if " OR " not in item]
                 choosable_pairs = [item.strip() for item in inventory_options if " OR " in item]
+                
                 char_embed.add_field(name="Inventory", value=", ".join(fixed_items) or "None yet", inline=True)
                 
                 # Handle choosable inventory
@@ -723,7 +764,7 @@ class DnDGame(commands.Cog):
     
     @commands.command(name="profile")
     async def show_profile(self, ctx):
-        """Display the user's character profile in the OOC thread"""
+        """Display the user's character profile in the OOC thread with dynamic stats."""
         channel_id = str(ctx.channel.id)
         parent_channel_id = str(ctx.channel.parent_id) if isinstance(ctx.channel, discord.Thread) else None
         
@@ -766,12 +807,22 @@ class DnDGame(commands.Cog):
         image_key = f"{race}_{character.get('class', 'Unknown')}"
         embed.set_thumbnail(url=CHARACTER_IMAGES.get(image_key, DEFAULT_IMAGE))
         
-        # Core Stats
-        embed.add_field(name="⚔️ Level", value=f"• **{character.get('level', '01')}**", inline=True)
-        hp_bar = "█" * 10
-        embed.add_field(name="❤️ HP: 100/100", value=f"`[{hp_bar}]`", inline=True)
-        exp_bar = "█" * 0 + "░" * 10
-        embed.add_field(name="🌟 Exp: 0/10", value=f"`[{exp_bar}]`", inline=True)
+        # Core Stats with dynamic values
+        level = character.get('level', 1)
+        hp = character.get('hp', 20)
+        max_hp = character.get('max_hp', 20)
+        exp = character.get('exp', 0)
+        exp_next_level = level * 20  # 20 EXP per level
+        
+        embed.add_field(name="⚔️ Level", value=f"• **{level}**", inline=True)
+        hp_ratio = hp / max_hp
+        hp_blocks = int(hp_ratio * 10)
+        hp_bar = "█" * hp_blocks + "░" * (10 - hp_blocks)
+        embed.add_field(name=f"❤️ HP: {hp}/{max_hp}", value=f"`[{hp_bar}]`", inline=True)
+        exp_ratio = exp / exp_next_level if exp_next_level > 0 else 0
+        exp_blocks = int(exp_ratio * 10)
+        exp_bar = "█" * exp_blocks + "░" * (10 - exp_blocks)
+        embed.add_field(name=f"🌟 Exp: {exp}/{exp_next_level}", value=f"`[{exp_bar}]`", inline=True)
         
         # Ability Scores
         abilities = (
@@ -805,7 +856,6 @@ class DnDGame(commands.Cog):
         )
         
         await ctx.send(embed=embed)
-
     def cog_unload(self):
         if self.use_mongo:
             self.mongo_client.close()

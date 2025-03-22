@@ -79,7 +79,6 @@ class EmoNarration(commands.Cog):
         """Extract world building elements from the narration to maintain consistency."""
         # Simple extraction of location descriptions
         if "SCENE:" in narration:
-            import re
             scene_match = re.search(r"SCENE: (.+?)(?=\n|$)", narration)
             if scene_match:
                 self.scene_descriptions[ic_channel_id] = scene_match.group(1)
@@ -87,7 +86,6 @@ class EmoNarration(commands.Cog):
                 
         # Extract NPC introductions
         if "NPC:" in narration:
-            import re
             npc_matches = re.findall(r"NPC: ([^:]+): (.+?)(?=\n|$)", narration)
             if npc_matches:
                 if ic_channel_id not in self.npc_database:
@@ -303,7 +301,6 @@ Special tags (these won't appear in the final text):
                 print(f"Error sending message in roll_dice (no DnDGame): {e}")
             return
 
-       # print(f"roll_dice: Checking game for channel {ctx.channel.id}")
         game = None
         channel_id = str(ctx.channel.id)
         for stored_game in (dnd_game.active_games.values() if not dnd_game.use_mongo else dnd_game.games_collection.find()):
@@ -701,9 +698,8 @@ Special tags (these won't appear in the final text):
             traits = ", ".join(char.get("traits", [])) or "None"
             equipment = ", ".join(char.get("equipment", [])) or "None"
             character_details.append(f"{name} (Race: {race}, Class: {char_class}, Spells: {spells}, Skills: {skills}, Traits: {traits}, Equipment: {equipment})")
-        
+    
         system_prompt = """You are Emo, a skilled and engaging Dungeon Master for a D&D adventure. Follow these storytelling guidelines:
-
 1. Begin with a brief, vivid scene description (2-3 lines) that helps players visualize where they are
 2. Use simple, everyday language that beginners can easily understand
 3. Introduce characters naturally, mentioning one interesting visual detail about each
@@ -720,12 +716,12 @@ Special tags (these won't appear in the final text):
 - Use NPC: Name: Description to track important non-player characters
 - If a dice roll is needed, include PENDING_ROLL: [character] must roll [dice] + [modifier] and explain why in everyday terms
 """
-        
+    
         # Check pending actions for this character
         pending = self.pending_actions.get(ic_channel_id, {})
         pending_for_char = pending.get(acting_char)
         narration = ""
-        
+    
         if pending_for_char and message.content.strip().isdigit():
             # Handle roll result
             roll_result = int(message.content.strip())
@@ -741,14 +737,37 @@ Special tags (these won't appear in the final text):
             user_prompt = f"Continue the {game['theme']} adventure for players {players} with characters: {'; '.join(character_details)}. Player action by {acting_char}: {message.content}"
             async with message.channel.typing():
                 narration = await self.get_gemini_response(system_prompt, user_prompt, ic_channel_id)
-            
-            # Check for new pending rolls in narration
-            if "PENDING_ROLL:" in narration:
-                match = re.search(r"PENDING_ROLL: (\w+) must roll (.+)", narration)
-                if match:
-                    char_name, roll = match.groups()
-                    await self.save_pending_action(ic_channel_id, {char_name: f"roll {roll}"})
-                    narration = narration.replace(match.group(0), f"{char_name}, please roll {roll} in your next reply.")
+    
+        # Parse narration for HP and EXP changes
+        if dnd_game:
+            hp_match = re.search(r"(\w+) takes (\d+) damage", narration, re.IGNORECASE)
+            if hp_match:
+                char_name, damage = hp_match.groups()
+                if char_name == acting_char:
+                    await dnd_game.update_character_stats(ic_channel_id, player_id, -int(damage))
+                    narration += f"\n{acting_char}'s HP decreased by {damage}!"
+
+            heal_match = re.search(r"(\w+) heals for (\d+)", narration, re.IGNORECASE)
+            if heal_match:
+                char_name, healing = heal_match.groups()
+                if char_name == acting_char:
+                    await dnd_game.update_character_stats(ic_channel_id, player_id, int(healing))
+                    narration += f"\n{acting_char}'s HP increased by {healing}!"
+
+            exp_match = re.search(r"(\w+) gains (\d+) EXP", narration, re.IGNORECASE)
+            if exp_match:
+                char_name, exp = exp_match.groups()
+                if char_name == acting_char:
+                    await dnd_game.award_exp(ic_channel_id, player_id, int(exp))
+                    narration += f"\n{acting_char} gained {exp} EXP!"
+
+        # Check for new pending rolls in narration
+        if "PENDING_ROLL:" in narration:
+            match = re.search(r"PENDING_ROLL: (\w+) must roll (.+)", narration)
+            if match:
+                char_name, roll = match.groups()
+                await self.save_pending_action(ic_channel_id, {char_name: f"roll {roll}"})
+                narration = narration.replace(match.group(0), f"{char_name}, please roll {roll} in your next reply.")
 
         # Add reminders for other pending actions
         if self.pending_actions.get(ic_channel_id):
@@ -756,8 +775,8 @@ Special tags (these won't appear in the final text):
                         for char, action in self.pending_actions[ic_channel_id].items() if char != acting_char]
             if reminders:
                 narration += "\n" + "\n".join(reminders)
-        
-        # Send narration as an embed for consistency
+
+        # Send narration as an embed
         adventure_embed = discord.Embed(
             title=f"🎭 {game['theme']} Adventure Continues",
             description=narration,
